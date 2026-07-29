@@ -1,24 +1,11 @@
-# Citlivá a lokální konfigurace
-.env
-.env.*
-!.env.example
-*.local
-
-# Výstupy aplikace a exportovaná data
-output/
-exports/
-tmp/
-temp/
-*.log
-
-# Python
+# Python environments and caches
+.venv/
+venv/
+env/
 __pycache__/
 *.py[cod]
 *.pyd
 .Python
-.venv/
-venv/
-env/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -28,22 +15,50 @@ build/
 dist/
 *.egg-info/
 
-# Node.js
-node_modules/
-.npm/
-.yarn/
-.pnpm-store/
-coverage/
-.next/
-.nuxt/
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.local
+config.local.*
 
-# IDE a editory
+# Runtime output
+exports/
+output/
+artifacts/
+logs/
+personal_data/
+private_captures/
+tmp/
+temp/
+*.log
+*.xlsx
+*.xls
+*.csv
+
+# Browser state
+browser-profile/
+browser_profiles/
+user-data-dir/
+playwright/.auth/
+storage_state*.json
+auth_state*.json
+cookies*.json
+
+# Playwright diagnostics
+test-results/
+playwright-report/
+traces/
+videos/
+*.har
+
+# IDEs and editors
 .idea/
 .vscode/
 *.swp
 *.swo
 
-# Operační systémy
+# Operating systems
 .DS_Store
 Thumbs.db
 Desktop.ini

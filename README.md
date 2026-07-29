@@ -1,37 +1,75 @@
 # Termino Exporter
 
-Nástroj pro export dat z aplikace Termino.
+Termino Exporter je připravovaná lokální aplikace pro Windows, která bude z kalendáře
+Termino načítat rezervace ve zvoleném období a exportovat je do souboru Excel.
 
 ## Stav projektu
 
-Projekt je v počáteční fázi vývoje. Dokumentace k instalaci, konfiguraci
-a používání bude doplněna společně s první funkční verzí.
+Projekt nyní obsahuje pouze otestovaný základ: Python balíček, příkazovou řádku, datový
+model a vývojové nástroje. Čtení dat z Termino, ovládání prohlížeče ani export do Excelu
+zatím nejsou implementovány. Nápověda příkazové řádky tuto skutečnost výslovně uvádí.
+
+Budoucí komunikace s Termino bude striktně **pouze pro čtení**. Aplikace nebude vytvářet,
+upravovat, kopírovat, rušit ani mazat rezervace.
+
+## Veřejný repozitář a osobní údaje
+
+Tento repozitář je veřejný. Do Git historie nikdy nepatří skutečná klientská data,
+produkční HTML, snímky obrazovky, záznamy Playwright, profily prohlížeče, cookies,
+autentizační stav, exporty ani tajné údaje. Testy a dokumentace smějí používat pouze
+zjevně smyšlená data. Lokální soubory vzniklé za běhu mohou obsahovat osobní údaje a
+musí zůstat v ignorovaných adresářích.
 
 ## Požadavky
 
-Konkrétní systémové požadavky a závislosti zatím nejsou stanoveny.
+- Windows 10 nebo Windows 11
+- Python 3.12
+- Git
 
-## Instalace
+## Instalace ve Windows PowerShell
 
-Postup instalace bude doplněn po výběru technologického řešení.
+```powershell
+git clone https://github.com/zuzannamatechova/termino-exporter.git
+Set-Location termino-exporter
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
+python -m playwright install chromium
+```
 
-## Konfigurace
+Poslední příkaz připraví Chromium pro budoucí vývoj. Současná aplikace prohlížeč
+nespouští.
 
-Citlivé konfigurační údaje ukládejte do lokálního souboru `.env`.
-Soubor `.env` se neukládá do Git repozitáře. Pro sdílení názvů
-požadovaných proměnných použijte bezpečný vzor `.env.example`.
+## Příkazová řádka
 
-## Použití
+```powershell
+python -m termino_exporter
+python -m termino_exporter --help
+python -m termino_exporter --version
+termino-exporter --help
+termino-exporter --version
+```
 
-Příklady spuštění a exportu budou doplněny s první implementací.
+Spuštění bez argumentů zobrazí nápovědu. Žádný současný příkaz nepřistupuje k internetu,
+nespouští prohlížeč ani nevytváří Excel.
 
-## Vývoj
+## Vývoj a kontroly
 
-1. Naklonujte repozitář.
-2. Vytvořte lokální konfiguraci podle budoucího souboru `.env.example`.
-3. Nainstalujte závislosti projektu.
-4. Spusťte testy a aplikaci podle pokynů, které budou doplněny.
+```powershell
+python -m pytest
+python -m pytest --cov=termino_exporter --cov-report=term-missing
+python -m ruff check .
+python -m ruff format --check .
+python -m ruff format .
+python -m mypy src
+```
 
-## Licence
+## Dokumentace
 
-Licence zatím nebyla určena.
+- [Funkční specifikace](docs/SPEC.md)
+- [Plán vývoje](docs/ROADMAP.md)
+- [Datový model](docs/DATA_MODEL.md)
+- [Bezpečnost a soukromí](docs/SECURITY.md)
+
+Licence zatím nebyla vlastníkem repozitáře zvolena.
