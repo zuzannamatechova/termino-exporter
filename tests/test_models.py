@@ -1,6 +1,7 @@
 from dataclasses import FrozenInstanceError
 from datetime import date, time
 from decimal import Decimal
+from typing import get_type_hints
 
 import pytest
 
@@ -14,6 +15,10 @@ def test_package_can_be_imported() -> None:
 
 def test_reservation_can_be_created_without_values() -> None:
     assert Reservation().reservation_id is None
+
+
+def test_reservation_date_annotation_can_be_evaluated() -> None:
+    assert get_type_hints(Reservation)["date"] == date | None
 
 
 def test_reservation_can_be_created_with_invented_values() -> None:

@@ -1,7 +1,8 @@
 """Domain models used by Termino Exporter."""
 
 from dataclasses import dataclass
-from datetime import date, time
+from datetime import date as Date
+from datetime import time as Time
 from decimal import Decimal
 
 
@@ -10,9 +11,9 @@ class Reservation:
     """Information read from one client reservation."""
 
     reservation_id: str | None = None
-    date: date | None = None
-    start_time: time | None = None
-    end_time: time | None = None
+    date: Date | None = None
+    start_time: Time | None = None
+    end_time: Time | None = None
     first_name: str | None = None
     last_name: str | None = None
     phone: str | None = None
