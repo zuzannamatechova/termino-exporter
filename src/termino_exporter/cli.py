@@ -1,8 +1,10 @@
 """Command-line interface for Termino Exporter."""
 
 import argparse
+import sys
 from collections.abc import Sequence
 from importlib.metadata import version
+from io import TextIOWrapper
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -32,6 +34,8 @@ def create_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the command-line interface."""
+    if isinstance(sys.stdout, TextIOWrapper):
+        sys.stdout.reconfigure(encoding="utf-8")
     parser = create_parser()
     args = parser.parse_args(argv)
     del args
