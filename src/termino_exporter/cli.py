@@ -77,8 +77,8 @@ def create_parser() -> CzechArgumentParser:
         "inspect-one",
         help="bezpečně prohlédne jednu ručně vybranou rezervaci",
         description=(
-            "Spustí viditelný prohlížeč a pouze pro čtení vypíše momentálně dostupný "
-            "text jednoho ručně otevřeného detailu rezervace."
+            "Spustí viditelný prohlížeč a pouze pro čtení vypíše strukturované hodnoty "
+            "jednoho ručně otevřeného detailu rezervace."
         ),
         add_help=False,
     )

@@ -29,35 +29,105 @@ def test_no_more_button_means_no_click() -> None:
     content.click.assert_not_called()
 
 
-def test_one_more_changes_to_less_and_is_clicked_once() -> None:
+def test_first_less_button_increase_confirms_click() -> None:
     candidate = MagicMock()
     less_button = MagicMock()
-    finder = _finder_with_results([candidate], [candidate], [less_button], [])
+    finder = _finder_with_results([candidate], [], [candidate], [less_button], [])
     content = MagicMock()
     content.inner_text.side_effect = ["stejné", "stejné"]
 
     expand_all_more_buttons(MagicMock(), content, find_buttons=finder)
 
     candidate.click.assert_called_once_with(timeout=EXPAND_CLICK_TIMEOUT_MS)
-    candidate.evaluate.assert_not_called()
+    candidate.evaluate.assert_called_once_with(
+        MATCHES_NAMED_BUTTON_SCRIPT,
+        [less_button],
+    )
+    less_button.click.assert_not_called()
+
+
+def test_second_less_button_increase_confirms_click() -> None:
+    candidate = MagicMock()
+    old_less = MagicMock()
+    new_less = MagicMock()
+    finder = _finder_with_results(
+        [candidate],
+        [old_less],
+        [candidate],
+        [old_less, new_less],
+        [],
+    )
+    content = MagicMock()
+    content.inner_text.side_effect = ["stejné", "stejné"]
+
+    expand_all_more_buttons(MagicMock(), content, find_buttons=finder)
+
+    candidate.click.assert_called_once_with(timeout=EXPAND_CLICK_TIMEOUT_MS)
+    old_less.click.assert_not_called()
+    new_less.click.assert_not_called()
+
+
+def test_existing_less_without_new_change_does_not_confirm_click() -> None:
+    candidate = MagicMock()
+    old_less = MagicMock()
+    candidate.evaluate.return_value = False
+    finder = _finder_with_results(
+        [candidate],
+        [old_less],
+        [candidate],
+        [old_less],
+    )
+    content = MagicMock()
+    content.inner_text.side_effect = ["stejné", "stejné"]
+
+    with pytest.raises(ExpansionError, match="nepodařilo potvrdit"):
+        expand_all_more_buttons(MagicMock(), content, find_buttons=finder)
+
+    candidate.click.assert_called_once_with(timeout=EXPAND_CLICK_TIMEOUT_MS)
+    old_less.click.assert_not_called()
+
+
+def test_clicked_handle_changing_exact_name_confirms_click() -> None:
+    candidate = MagicMock()
+    changed_candidate = MagicMock()
+    candidate.evaluate.return_value = True
+    finder = _finder_with_results(
+        [candidate],
+        [MagicMock()],
+        [candidate],
+        [changed_candidate],
+        [],
+    )
+    content = MagicMock()
+    content.inner_text.side_effect = ["stejné", "stejné"]
+
+    expand_all_more_buttons(MagicMock(), content, find_buttons=finder)
+
+    candidate.evaluate.assert_called_once_with(
+        MATCHES_NAMED_BUTTON_SCRIPT,
+        [changed_candidate],
+    )
+    candidate.click.assert_called_once_with(timeout=EXPAND_CLICK_TIMEOUT_MS)
+    changed_candidate.click.assert_not_called()
 
 
 def test_longer_inner_text_confirms_expansion() -> None:
     candidate = MagicMock()
-    finder = _finder_with_results([candidate], [candidate], [])
+    candidate.evaluate.return_value = False
+    finder = _finder_with_results([candidate], [], [candidate], [], [])
     content = MagicMock()
     content.inner_text.side_effect = ["krátký", "delší rozbalený text"]
 
     expand_all_more_buttons(MagicMock(), content, find_buttons=finder)
 
     candidate.click.assert_called_once_with(timeout=EXPAND_CLICK_TIMEOUT_MS)
-    candidate.evaluate.assert_not_called()
 
 
 def test_lower_more_count_confirms_expansion() -> None:
     candidate = MagicMock()
     second = MagicMock()
-    finder = _finder_with_results([second, candidate], [second], [])
+    candidate.evaluate.return_value = False
+    finder = _finder_with_results([second, candidate], [], [second], [], [])
     content = MagicMock()
     content.inner_text.side_effect = ["stejné", "stejné"]
 
@@ -67,32 +137,41 @@ def test_lower_more_count_confirms_expansion() -> None:
     second.click.assert_not_called()
 
 
-def test_two_buttons_are_processed_with_fresh_handles() -> None:
+def test_two_more_first_succeeds_second_does_not_react() -> None:
     first = MagicMock()
     stale_second = MagicMock()
     fresh_second = MagicMock()
+    old_less = MagicMock()
+    first.evaluate.return_value = False
+    fresh_second.evaluate.return_value = False
     finder = _finder_with_results(
         [stale_second, first],
-        [fresh_second],
-        [fresh_second],
         [],
-        [],
+        [fresh_second],
+        [old_less],
+        [fresh_second],
+        [old_less],
+        [fresh_second],
+        [old_less],
     )
     content = MagicMock()
     content.inner_text.side_effect = ["a", "a", "b", "b"]
 
-    expand_all_more_buttons(MagicMock(), content, find_buttons=finder)
+    with pytest.raises(ExpansionError, match="nepodařilo potvrdit"):
+        expand_all_more_buttons(MagicMock(), content, find_buttons=finder)
 
     first.click.assert_called_once_with(timeout=EXPAND_CLICK_TIMEOUT_MS)
     fresh_second.click.assert_called_once_with(timeout=EXPAND_CLICK_TIMEOUT_MS)
     stale_second.click.assert_not_called()
-    assert finder.call_count == 5
+    old_less.click.assert_not_called()
+    assert finder.call_count == 8
 
 
 def test_unconfirmed_expansion_stops_without_second_click() -> None:
     candidate = MagicMock()
+    old_less = MagicMock()
     candidate.evaluate.return_value = False
-    finder = _finder_with_results([candidate], [candidate], [])
+    finder = _finder_with_results([candidate], [old_less], [candidate], [old_less])
     content = MagicMock()
     content.inner_text.side_effect = ["stejné", "stejné"]
 
@@ -100,18 +179,21 @@ def test_unconfirmed_expansion_stops_without_second_click() -> None:
         expand_all_more_buttons(MagicMock(), content, find_buttons=finder)
 
     candidate.click.assert_called_once_with(timeout=EXPAND_CLICK_TIMEOUT_MS)
-    candidate.evaluate.assert_not_called()
+    old_less.click.assert_not_called()
 
 
 def test_more_than_ten_expansions_stops_before_eleventh_click() -> None:
     candidates = [MagicMock() for _ in range(MAX_SUCCESSFUL_EXPANSIONS + 1)]
     results: list[list[MagicMock]] = []
-    for candidate in candidates[:MAX_SUCCESSFUL_EXPANSIONS]:
-        results.extend(([candidate], []))
+    text_values: list[str] = []
+    for index, candidate in enumerate(candidates[:MAX_SUCCESSFUL_EXPANSIONS]):
+        candidate.evaluate.return_value = False
+        results.extend(([candidate], [], [candidate], []))
+        text_values.extend(("x" * (index + 1), "x" * (index + 2)))
     results.append([candidates[-1]])
     finder = _finder_with_results(*results)
     content = MagicMock()
-    content.inner_text.side_effect = ["stejné"] * (MAX_SUCCESSFUL_EXPANSIONS * 2)
+    content.inner_text.side_effect = text_values
 
     with pytest.raises(ExpansionError, match="příliš mnoho"):
         expand_all_more_buttons(MagicMock(), content, find_buttons=finder)
@@ -189,41 +271,26 @@ def test_forbidden_action_is_not_returned_or_clicked(forbidden_name: str) -> Non
     forbidden_button.click.assert_not_called()
 
 
-def test_final_text_is_read_only_after_expansion(
+def test_expansion_error_prints_no_detail_or_client_data(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     page = MagicMock()
-    content = MagicMock()
-    events: list[str] = []
-    content.inner_text.side_effect = lambda: (
-        events.append("read-final-text") or "Finální rozbalený obsah"
-    )
-    expand_detail = MagicMock(side_effect=lambda _page, _content: events.append("expand"))
+    scroll_container = MagicMock()
+    structure = MagicMock(scroll_container=scroll_container)
     write = MagicMock()
-    flush = MagicMock()
-    close_candidate = MagicMock()
     monkeypatch.setattr(
-        "termino_exporter.inspection.find_detail_content",
-        MagicMock(return_value=content),
-    )
-    monkeypatch.setattr(
-        "termino_exporter.inspection.find_safe_close_control",
-        MagicMock(return_value=close_candidate),
-    )
-    monkeypatch.setattr(
-        "termino_exporter.inspection.confirm_detail_closed",
-        MagicMock(),
+        "termino_exporter.inspection.find_detail_structure",
+        MagicMock(return_value=structure),
     )
 
-    inspect_open_detail(
-        page,
-        write=write,
-        flush_output=flush,
-        expand_detail=expand_detail,
-    )
+    with pytest.raises(ExpansionError):
+        inspect_open_detail(
+            page,
+            write=write,
+            expand_detail=MagicMock(
+                side_effect=ExpansionError("Rozbalení se nepodařilo potvrdit.")
+            ),
+        )
 
-    expand_detail.assert_called_once_with(page, content)
-    content.inner_text.assert_called_once_with()
-    assert events == ["expand", "read-final-text"]
-    write.assert_any_call("Finální rozbalený obsah")
-    flush.assert_called_once_with()
+    write.assert_not_called()
+    structure.close_control.click.assert_not_called()
