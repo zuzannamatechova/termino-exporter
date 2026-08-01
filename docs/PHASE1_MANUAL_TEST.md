@@ -1,6 +1,6 @@
 # Ruční test Phase 1
 
-Tento postup ověřuje pouze bezpečné vypsání momentálně dostupného textu jednoho ručně
+Tento postup ověřuje bezpečné vypsání textu jednoho ručně
 otevřeného detailu rezervace. Nepoužívejte při dokumentování testu skutečná klientská
 data.
 
@@ -34,7 +34,7 @@ Pro lokální ruční test použijte pouze dummy rezervaci `Jana Nováková`.
 3. Ručně přejděte na správné datum.
 4. Ručně klikněte na požadovanou rezervaci a nechte její detail otevřený.
 5. Vraťte se do terminálu a stiskněte Enter.
-6. Ověřte, že se v terminálu objeví pouze momentálně dostupný text jednoho detailu.
+6. Ověřte, že se v terminálu objeví pouze finální text jednoho detailu.
 7. Ověřte, že se detail zavřel jediným kliknutím na ikonový křížek.
 8. Ověřte, že se prohlížeč po dokončení ukončil.
 
@@ -67,8 +67,9 @@ zakázané akce v následující akční větvi.
 - Příkaz zpracuje pouze jednu ručně vybranou rezervaci.
 - Rezervaci musí otevřít uživatel ručně.
 - Automatické hledání rezervace a klikání na ni není součástí Phase 1.
-- Neposouvá vnitřní obsah detailu a nekliká na `Více`.
-- Vypisuje jen aktuálně dostupný text bez parsování jednotlivých polí.
+- Běžný příkaz nyní před finálním výpisem bezpečně rozbalí prvky `Více`;
+  na `Méně` nikdy nekliká.
+- Vypisuje finální DOM text bez parsování jednotlivých polí.
 - Nevytváří `Reservation`, Excel ani jiný soubor.
 - Skutečné chování lokátorů je nutné ověřit ručním testem proti aktuálnímu DOM; v
   repozitáři se nesmějí ukládat produkční zachycená data.
