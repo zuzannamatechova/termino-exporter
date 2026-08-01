@@ -7,9 +7,9 @@ Termino načítat rezervace ve zvoleném období a exportovat je do souboru Exce
 
 Projekt obsahuje otestovaný základ a první ruční kontrolní příkaz `inspect-one`. Tento
 příkaz otevře viditelný prohlížeč a nechá uživatele ručně vybrat datum i otevřít detail
-rezervace. Program potom bezpečně vypíše momentálně dostupný text právě jednoho detailu
-do terminálu. Posouvání detailu, strukturované zpracování údajů a export do Excelu zatím
-nejsou implementovány.
+rezervace. Program potom bezpečně vypíše finální DOM text právě jednoho detailu
+do terminálu. Před výpisem bezpečně rozbalí zkrácený obsah pomocí prvků `Více`.
+Strukturované zpracování údajů a export do Excelu zatím nejsou implementovány.
 
 Budoucí komunikace s Termino bude striktně **pouze pro čtení**. Aplikace nebude vytvářet,
 upravovat, kopírovat, rušit ani mazat rezervace.
@@ -87,8 +87,13 @@ pomocí nepojmenovaného ikonového křížku, pouze pokud právě jeden viditel
 SVG a jeho trimovaný textový obsah je prázdný. Akce `Zkopírovat rezervaci`, `Odstranit` a
 `Upravit` pod obsahem jsou výslovně vyloučeny. Nepoužívají se souřadnice, ID ani CSS
 třídy. Před kliknutím musí být jednoznačně potvrzeny sourozenecké větve v pořadí
-hlavička, rolovací obsah a zakázané akce. Program čte pouze momentálně dostupnou část detailu, neposouvá ji a nekliká
-na `Více`.
+hlavička, rolovací obsah a zakázané akce.
+
+Běžný `inner_text` načte celý aktuální DOM rolovacího panelu, ale dlouhou poznámku
+Termino zkracuje už v DOM. Program proto před finálním čtením postupně rozbalí
+viditelné prvky `button` s přesným přístupným názvem `Více`, pouze uvnitř rolovacího
+obsahu. Po úspěchu se tlačítko změní na `Méně`; aplikace na `Méně` nikdy nekliká.
+Finální text vypíše pouze jednou po dokončení všech rozbalení.
 
 Příkaz je určen výhradně pro čtení. Nesmí se používat k vytváření, úpravám, kopírování,
 rušení ani mazání rezervací. Podrobný bezpečný postup je v
@@ -112,5 +117,6 @@ python -m mypy src
 - [Datový model](docs/DATA_MODEL.md)
 - [Bezpečnost a soukromí](docs/SECURITY.md)
 - [Ruční test Phase 1](docs/PHASE1_MANUAL_TEST.md)
+- [Ruční test Phase 2](docs/PHASE2_MANUAL_TEST.md)
 
 Licence zatím nebyla vlastníkem repozitáře zvolena.

@@ -18,6 +18,7 @@ from termino_exporter.inspection import (
     MAX_CONTENT_ANCESTOR_DEPTH,
     CloseControlError,
     DetailStructureError,
+    ExpansionError,
     InspectionError,
     confirm_detail_closed,
     find_detail_content,
@@ -349,7 +350,12 @@ def test_inspection_reads_only_content_and_clicks_unique_close() -> None:
     write = MagicMock()
     flush_output = MagicMock()
 
-    inspect_open_detail(page, write=write, flush_output=flush_output)
+    inspect_open_detail(
+        page,
+        write=write,
+        flush_output=flush_output,
+        expand_detail=MagicMock(),
+    )
 
     content.inner_text.assert_called_once_with()
     flush_output.assert_called_once_with()
@@ -382,13 +388,14 @@ def test_inspection_prints_and_flushes_before_close_error() -> None:
             page,
             write=lambda text: events.append(f"write:{text}"),
             flush_output=lambda: events.append("flush"),
+            expand_detail=MagicMock(),
         )
 
     content.inner_text.assert_called_once_with()
     assert events == [
-        "write:----- Aktuálně dostupný text detailu rezervace -----",
+        "write:----- Finální text detailu rezervace -----",
         "write:Jana Nováková",
-        "write:----- Konec aktuálně dostupného textu -----",
+        "write:----- Konec finálního textu -----",
         "flush",
         "find-close",
     ]
@@ -405,7 +412,11 @@ def test_unconfirmed_close_is_not_clicked_twice() -> None:
     content.wait_for_element_state.side_effect = PlaywrightTimeoutError("timeout")
 
     with pytest.raises(CloseControlError, match="nepodařilo potvrdit"):
-        inspect_open_detail(page, flush_output=MagicMock())
+        inspect_open_detail(
+            page,
+            flush_output=MagicMock(),
+            expand_detail=MagicMock(),
+        )
 
     candidate.click.assert_called_once_with()
 
@@ -431,7 +442,7 @@ def test_playwright_error_does_not_expose_detail_data() -> None:
     content.evaluate.return_value = True
 
     with pytest.raises(InspectionError) as caught:
-        inspect_open_detail(page)
+        inspect_open_detail(page, expand_detail=MagicMock())
 
     assert str(caught.value) == "Operace s otevřeným detailem se nezdařila."
     assert "Jana Nováková" not in str(caught.value)
@@ -508,6 +519,29 @@ def test_browser_context_closes_after_expected_error(
 
     assert manager.exited is True
     assert manager.exit_type is DetailStructureError
+
+
+def test_browser_context_closes_after_expansion_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page = MagicMock()
+    monkeypatch.setattr(
+        "termino_exporter.inspection.inspect_open_detail",
+        MagicMock(side_effect=ExpansionError("bezpečná chyba rozbalení")),
+    )
+    manager = RecordingContextManager(page)
+
+    with pytest.raises(ExpansionError):
+        inspect_one_reservation(
+            url="https://local.termino.eu/",
+            profile_dir=Path("profile"),
+            timeout_seconds=30.0,
+            context_factory=lambda _profile, _timeout: manager,
+            wait_for_enter=lambda _: "",
+        )
+
+    assert manager.exited is True
+    assert manager.exit_type is ExpansionError
 
 
 def test_browser_context_closes_after_keyboard_interrupt(

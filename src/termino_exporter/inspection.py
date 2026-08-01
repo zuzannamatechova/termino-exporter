@@ -28,10 +28,14 @@ ContextFactory = Callable[[Path, float], AbstractContextManager[BrowserContext]]
 OutputWriter = Callable[[str], None]
 WaitForEnter = Callable[[str], str]
 FlushOutput = Callable[[], None]
+NamedButtonFinder = Callable[[Page, ElementHandle, str], list[ElementHandle]]
+ExpandDetail = Callable[[Page, ElementHandle], None]
 
 MAX_CONTENT_ANCESTOR_DEPTH = 10
 MAX_CLOSE_ANCESTOR_DEPTH = 4
 CLOSE_CONFIRM_TIMEOUT_MS = 3_000
+EXPAND_CLICK_TIMEOUT_MS = 3_000
+MAX_SUCCESSFUL_EXPANSIONS = 10
 FIND_SCROLL_CONTAINER_SCRIPT = """
 (dateLabel, options) => {
     const timeLabel = options.timeLabel;
@@ -56,6 +60,7 @@ FIND_SCROLL_CONTAINER_SCRIPT = """
 }
 """
 PARENT_ELEMENT_SCRIPT = "(element) => element.parentElement"
+MATCHES_NAMED_BUTTON_SCRIPT = "(button, matches) => matches.includes(button)"
 CLOSE_SIGNATURE_SCRIPT = """
 (button, options) => {
     const branches = Array.from(options.root.children);
@@ -112,6 +117,10 @@ class CloseControlError(InspectionError):
     """The detail did not have exactly one safe close control."""
 
 
+class ExpansionError(InspectionError):
+    """The full detail could not be expanded safely."""
+
+
 def _flush_stdout() -> None:
     sys.stdout.flush()
 
@@ -130,6 +139,61 @@ def _find_one_visible_label(page: Page, text: str, error_message: str) -> Locato
     if len(matches) != 1:
         raise DetailStructureError(error_message)
     return matches[0]
+
+
+def _visible_named_buttons_inside(
+    page: Page,
+    content: ElementHandle,
+    name: str,
+) -> list[ElementHandle]:
+    """Return fresh visible named buttons that are descendants of content."""
+    named_buttons = named_visible_button_handles(page, (name,))
+    matches: list[ElementHandle] = []
+    for button in content.query_selector_all("button"):
+        if button.is_visible() and button.evaluate(
+            MATCHES_NAMED_BUTTON_SCRIPT,
+            named_buttons,
+        ):
+            matches.append(button)
+    return matches
+
+
+def expand_all_more_buttons(
+    page: Page,
+    content: ElementHandle,
+    *,
+    find_buttons: NamedButtonFinder = _visible_named_buttons_inside,
+    click_timeout_ms: float = EXPAND_CLICK_TIMEOUT_MS,
+) -> None:
+    """Expand every current More button once, with bounded verified progress."""
+    successful_expansions = 0
+    while True:
+        more_buttons = find_buttons(page, content, "Více")
+        if not more_buttons:
+            return
+        if successful_expansions >= MAX_SUCCESSFUL_EXPANSIONS:
+            raise ExpansionError("Detail obsahuje příliš mnoho prvků k rozbalení.")
+
+        before_more_count = len(more_buttons)
+        candidate = more_buttons.pop()
+        before_text_length = len(content.inner_text())
+        candidate.click(timeout=click_timeout_ms)
+
+        refreshed_more_buttons = find_buttons(page, content, "Více")
+        after_text_length = len(content.inner_text())
+        if (
+            len(refreshed_more_buttons) < before_more_count
+            or after_text_length > before_text_length
+        ):
+            successful_expansions += 1
+            continue
+
+        less_buttons = find_buttons(page, content, "Méně")
+        if less_buttons:
+            successful_expansions += 1
+            continue
+
+        raise ExpansionError("Rozbalení obsahu detailu se nepodařilo potvrdit.")
 
 
 def find_detail_content(page: Page) -> ElementHandle:
@@ -240,14 +304,16 @@ def inspect_open_detail(
     page: Page,
     write: OutputWriter = print,
     flush_output: FlushOutput = _flush_stdout,
+    expand_detail: ExpandDetail = expand_all_more_buttons,
 ) -> None:
     """Print current content of one manually opened detail and close it safely."""
     try:
         content = find_detail_content(page)
+        expand_detail(page, content)
         detail_text = content.inner_text()
-        write("----- Aktuálně dostupný text detailu rezervace -----")
+        write("----- Finální text detailu rezervace -----")
         write(detail_text)
-        write("----- Konec aktuálně dostupného textu -----")
+        write("----- Konec finálního textu -----")
         flush_output()
         close_control = find_safe_close_control(page, content)
         close_control.click()

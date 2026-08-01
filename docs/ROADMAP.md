@@ -14,10 +14,13 @@ dialogovou roli, proto se obsah bezpečně určí přes jedinečné statické po
 `Čas` a jejich společného skutečně scrollovatelného DOM předka, bez CSS tříd a ID.
 Uživatel detail stále otevírá ručně; program jej neposouvá ani nekliká na `Více`.
 
-## Phase 2 — Načíst a posouvat jeden celý dialog
+## Phase 2 — Načíst celý obsah jednoho detailu
 
-Hotovo, když je nalezen rolovací kontejner dialogu, relevantní prvky „Více“ jsou
-rozbaleny, obsah se shromáždí bez zjevných duplicit a dialog se bezpečně zavře.
+Hotovo, když je nalezen rolovací kontejner detailu, všechny přesně pojmenované prvky
+`button` s názvem `Více` uvnitř kontejneru jsou postupně a ověřeně rozbaleny, finální
+`inner_text` se vypíše pouze jednou a detail se bezpečně zavře. Běžný `inner_text`
+načte celý aktuální DOM rolovacího panelu; tlačítko `Méně` se nikdy nepoužívá ke
+zpětnému sbalení.
 
 ## Phase 3 — Zpracovat jednu rezervaci
 
