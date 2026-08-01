@@ -28,24 +28,27 @@ def test_default_profile_dir_falls_back_to_home() -> None:
     assert profile == Path("/invented/home/.termino-exporter/browser-profile")
 
 
-def make_project(tmp_path: Path) -> Path:
+def make_project(tmp_path: Path, *, git_file: bool = False) -> Path:
     project = tmp_path / "project"
     project.mkdir()
-    (project / ".git").mkdir()
+    if git_file:
+        (project / ".git").write_text("gitdir: ../invented-worktree-data", encoding="utf-8")
+    else:
+        (project / ".git").mkdir()
     return project
 
 
 def test_profile_at_project_root_is_rejected(tmp_path: Path) -> None:
     project = make_project(tmp_path)
 
-    with pytest.raises(ProfilePathError, match="nesmí být uvnitř projektu"):
+    with pytest.raises(ProfilePathError, match="nesmí být uvnitř Git repozitáře"):
         safe_profile_dir(project, working_directory=project)
 
 
 def test_profile_below_project_root_is_rejected(tmp_path: Path) -> None:
     project = make_project(tmp_path)
 
-    with pytest.raises(ProfilePathError, match="nesmí být uvnitř projektu"):
+    with pytest.raises(ProfilePathError, match="nesmí být uvnitř Git repozitáře"):
         safe_profile_dir(project / "private-profile", working_directory=project)
 
 
@@ -69,20 +72,47 @@ def test_relative_profile_is_resolved_before_validation(
     assert result == (tmp_path / "private-profile").resolve()
 
 
-def test_working_directory_is_protected_when_repository_root_is_unknown(
+def test_nonexistent_profile_below_repository_is_rejected_without_creation(
     tmp_path: Path,
 ) -> None:
-    working_directory = tmp_path / "standalone"
-    working_directory.mkdir()
+    project = make_project(tmp_path)
+    profile = project / "missing" / "private-profile"
 
-    with (
-        patch("termino_exporter.browser._find_repository_root", return_value=None),
-        pytest.raises(ProfilePathError, match="nesmí být uvnitř projektu"),
-    ):
-        safe_profile_dir(
-            working_directory / "private-profile",
-            working_directory=working_directory,
-        )
+    with pytest.raises(ProfilePathError, match="nesmí být uvnitř Git repozitáře"):
+        safe_profile_dir(profile, working_directory=tmp_path)
+
+    assert not profile.exists()
+
+
+def test_target_repository_is_detected_when_started_elsewhere(tmp_path: Path) -> None:
+    project = make_project(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+
+    with pytest.raises(ProfilePathError, match="nesmí být uvnitř Git repozitáře"):
+        safe_profile_dir(project / "profile", working_directory=elsewhere)
+
+
+def test_git_file_marks_worktree_as_repository(tmp_path: Path) -> None:
+    project = make_project(tmp_path, git_file=True)
+
+    with pytest.raises(ProfilePathError, match="nesmí být uvnitř Git repozitáře"):
+        safe_profile_dir(project / "profile", working_directory=tmp_path)
+
+
+def test_similar_directory_name_without_git_marker_is_allowed(tmp_path: Path) -> None:
+    ordinary = tmp_path / "project.git-backup" / "profile"
+
+    assert safe_profile_dir(ordinary, working_directory=tmp_path) == ordinary.resolve()
+
+
+def test_profile_error_does_not_expose_absolute_path(tmp_path: Path) -> None:
+    project = make_project(tmp_path)
+
+    with pytest.raises(ProfilePathError) as captured_error:
+        safe_profile_dir(project / "private-profile", working_directory=tmp_path)
+
+    assert str(project.resolve()) not in str(captured_error.value)
 
 
 def playwright_mocks() -> tuple[MagicMock, MagicMock, MagicMock]:

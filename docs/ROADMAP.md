@@ -51,6 +51,13 @@ očištěný `raw_detail` se předají čistému parseru a výsledný `Reservati
 přes explicitně povolená pole. `raw_detail` zůstává v paměti. Navigace přes všechny
 rezervace dne zůstává součástí Phase 4.
 
+### Bezpečnostní zpevnění před Phase 4
+
+Profil prohlížeče je odmítnut uvnitř libovolného Git repozitáře. Každý bezpečný kandidát
+`Více` dostane nejvýše jeden click a aplikace poté omezenou dobu čeká na potvrzenou změnu
+čerstvého DOM. `raw_detail` zůstává pouze v paměti, není v `repr` a neovlivňuje rovnost
+objektů. Phase 4 tímto zpevněním nebyla zahájena.
+
 ## Phase 4 — Zpracovat jeden celý den
 
 Hotovo, když se zpracují všechny klientské rezervace dne, přeskočí se blokace a

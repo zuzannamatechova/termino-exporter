@@ -1,6 +1,7 @@
 """Read-only inspection of one manually opened Termino reservation."""
 
 import sys
+import time
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 from pathlib import Path
@@ -46,10 +47,14 @@ WaitForEnter = Callable[[str], str]
 FlushOutput = Callable[[], None]
 NamedButtonFinder = Callable[[Page, ElementHandle, str], list[ElementHandle]]
 ExpandDetail = Callable[[Page, ElementHandle], None]
+MonotonicClock = Callable[[], float]
+Sleep = Callable[[float], None]
 
 MAX_CLOSE_ANCESTOR_DEPTH = MAX_STRUCTURE_ANCESTOR_DEPTH
 CLOSE_CONFIRM_TIMEOUT_MS = 3_000
 EXPAND_CLICK_TIMEOUT_MS = 3_000
+EXPAND_PROGRESS_TIMEOUT_MS = 3_000
+EXPAND_POLL_INTERVAL_SECONDS = 0.05
 MAX_SUCCESSFUL_EXPANSIONS = 10
 MATCHES_NAMED_BUTTON_SCRIPT = "(button, matches) => matches.includes(button)"
 
@@ -126,6 +131,9 @@ def expand_all_more_buttons(
     *,
     find_buttons: NamedButtonFinder = _visible_named_buttons_inside,
     click_timeout_ms: float = EXPAND_CLICK_TIMEOUT_MS,
+    progress_timeout_ms: float = EXPAND_PROGRESS_TIMEOUT_MS,
+    monotonic: MonotonicClock = time.monotonic,
+    sleep: Sleep = time.sleep,
 ) -> None:
     """Expand every current More button once, with bounded verified progress."""
     successful_expansions = 0
@@ -141,24 +149,27 @@ def expand_all_more_buttons(
         candidate = more_buttons.pop()
         before_text_length = len(content.inner_text())
         candidate.click(timeout=click_timeout_ms)
+        deadline = monotonic() + progress_timeout_ms / 1_000
 
-        refreshed_more_buttons = find_buttons(page, content, "Více")
-        refreshed_less_buttons = find_buttons(page, content, "Méně")
-        after_text_length = len(content.inner_text())
-        candidate_changed_to_less = _handle_is_in_fresh_matches(
-            candidate,
-            refreshed_less_buttons,
-        )
-        if (
-            len(refreshed_more_buttons) < before_more_count
-            or len(refreshed_less_buttons) > before_less_count
-            or after_text_length > before_text_length
-            or candidate_changed_to_less
-        ):
-            successful_expansions += 1
-            continue
-
-        raise ExpansionError("Rozbalení obsahu detailu se nepodařilo potvrdit.")
+        while True:
+            refreshed_more_buttons = find_buttons(page, content, "Více")
+            refreshed_less_buttons = find_buttons(page, content, "Méně")
+            after_text_length = len(content.inner_text())
+            candidate_changed_to_less = _handle_is_in_fresh_matches(
+                candidate,
+                refreshed_less_buttons,
+            )
+            if (
+                len(refreshed_more_buttons) < before_more_count
+                or len(refreshed_less_buttons) > before_less_count
+                or after_text_length > before_text_length
+                or candidate_changed_to_less
+            ):
+                successful_expansions += 1
+                break
+            if monotonic() >= deadline:
+                raise ExpansionError("Rozbalení obsahu detailu se nepodařilo potvrdit.")
+            sleep(EXPAND_POLL_INTERVAL_SECONDS)
 
 
 def find_detail_content(page: Page) -> ElementHandle:

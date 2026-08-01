@@ -48,3 +48,25 @@ def test_reservation_is_immutable() -> None:
 
     with pytest.raises(FrozenInstanceError):
         reservation.client_name = "JINÁ TEST OSOBA"  # type: ignore[misc]
+
+
+def test_raw_detail_is_hidden_from_repr_but_remains_accessible() -> None:
+    reservation = Reservation(client_name="TEST OSOBA", raw_detail="TEST RAW DETAIL")
+
+    representation = repr(reservation)
+
+    assert "raw_detail" not in representation
+    assert "TEST RAW DETAIL" not in representation
+    assert "client_name='TEST OSOBA'" in representation
+    assert reservation.raw_detail == "TEST RAW DETAIL"
+
+
+def test_raw_detail_does_not_affect_equality() -> None:
+    first = Reservation(client_name="TEST OSOBA", raw_detail="TEST RAW DETAIL A")
+    second = Reservation(client_name="TEST OSOBA", raw_detail="TEST RAW DETAIL B")
+
+    assert first == second
+
+
+def test_regular_fields_still_affect_equality() -> None:
+    assert Reservation(client_name="TEST OSOBA") != Reservation(client_name="JINÁ TEST OSOBA")

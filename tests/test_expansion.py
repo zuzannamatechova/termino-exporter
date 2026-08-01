@@ -4,6 +4,7 @@ import pytest
 
 from termino_exporter.inspection import (
     EXPAND_CLICK_TIMEOUT_MS,
+    EXPAND_POLL_INTERVAL_SECONDS,
     MATCHES_NAMED_BUTTON_SCRIPT,
     MAX_SUCCESSFUL_EXPANSIONS,
     ExpansionError,
@@ -81,7 +82,7 @@ def test_existing_less_without_new_change_does_not_confirm_click() -> None:
     content.inner_text.side_effect = ["stejné", "stejné"]
 
     with pytest.raises(ExpansionError, match="nepodařilo potvrdit"):
-        expand_all_more_buttons(MagicMock(), content, find_buttons=finder)
+        expand_all_more_buttons(MagicMock(), content, find_buttons=finder, progress_timeout_ms=0)
 
     candidate.click.assert_called_once_with(timeout=EXPAND_CLICK_TIMEOUT_MS)
     old_less.click.assert_not_called()
@@ -158,7 +159,7 @@ def test_two_more_first_succeeds_second_does_not_react() -> None:
     content.inner_text.side_effect = ["a", "a", "b", "b"]
 
     with pytest.raises(ExpansionError, match="nepodařilo potvrdit"):
-        expand_all_more_buttons(MagicMock(), content, find_buttons=finder)
+        expand_all_more_buttons(MagicMock(), content, find_buttons=finder, progress_timeout_ms=0)
 
     first.click.assert_called_once_with(timeout=EXPAND_CLICK_TIMEOUT_MS)
     fresh_second.click.assert_called_once_with(timeout=EXPAND_CLICK_TIMEOUT_MS)
@@ -176,10 +177,115 @@ def test_unconfirmed_expansion_stops_without_second_click() -> None:
     content.inner_text.side_effect = ["stejné", "stejné"]
 
     with pytest.raises(ExpansionError, match="nepodařilo potvrdit"):
-        expand_all_more_buttons(MagicMock(), content, find_buttons=finder)
+        expand_all_more_buttons(MagicMock(), content, find_buttons=finder, progress_timeout_ms=0)
 
     candidate.click.assert_called_once_with(timeout=EXPAND_CLICK_TIMEOUT_MS)
     old_less.click.assert_not_called()
+
+
+def test_more_count_can_drop_on_second_poll_without_another_click() -> None:
+    candidate = MagicMock()
+    candidate.evaluate.return_value = False
+    finder = _finder_with_results(
+        [candidate],
+        [],
+        [candidate],
+        [],
+        [],
+        [],
+        [],
+    )
+    content = MagicMock()
+    content.inner_text.side_effect = ["stejné", "stejné", "stejné"]
+    sleep = MagicMock()
+
+    expand_all_more_buttons(
+        MagicMock(), content, find_buttons=finder, monotonic=lambda: 0.0, sleep=sleep
+    )
+
+    candidate.click.assert_called_once_with(timeout=EXPAND_CLICK_TIMEOUT_MS)
+    sleep.assert_called_once_with(EXPAND_POLL_INTERVAL_SECONDS)
+
+
+def test_less_count_can_increase_on_third_poll() -> None:
+    candidate = MagicMock()
+    old_less = MagicMock()
+    new_less = MagicMock()
+    candidate.evaluate.return_value = False
+    finder = _finder_with_results(
+        [candidate],
+        [old_less],
+        [candidate],
+        [old_less],
+        [candidate],
+        [old_less],
+        [candidate],
+        [old_less, new_less],
+        [],
+    )
+    content = MagicMock()
+    content.inner_text.side_effect = ["x", "x", "x", "x"]
+    sleep = MagicMock()
+
+    expand_all_more_buttons(
+        MagicMock(), content, find_buttons=finder, monotonic=lambda: 0.0, sleep=sleep
+    )
+
+    candidate.click.assert_called_once_with(timeout=EXPAND_CLICK_TIMEOUT_MS)
+    assert sleep.call_count == 2
+    old_less.click.assert_not_called()
+    new_less.click.assert_not_called()
+
+
+def test_text_can_grow_after_multiple_polls() -> None:
+    candidate = MagicMock()
+    candidate.evaluate.return_value = False
+    finder = _finder_with_results(
+        [candidate], [], [candidate], [], [candidate], [], [candidate], [], []
+    )
+    content = MagicMock()
+    content.inner_text.side_effect = ["x", "x", "x", "delší"]
+    sleep = MagicMock()
+
+    expand_all_more_buttons(
+        MagicMock(), content, find_buttons=finder, monotonic=lambda: 0.0, sleep=sleep
+    )
+
+    candidate.click.assert_called_once_with(timeout=EXPAND_CLICK_TIMEOUT_MS)
+    assert sleep.call_count == 2
+
+
+def test_candidate_can_change_to_less_after_delayed_poll() -> None:
+    candidate = MagicMock()
+    changed = MagicMock()
+    candidate.evaluate.side_effect = [False, True]
+    finder = _finder_with_results([candidate], [], [candidate], [], [candidate], [changed], [])
+    content = MagicMock()
+    content.inner_text.side_effect = ["x", "x", "x"]
+    sleep = MagicMock()
+
+    expand_all_more_buttons(
+        MagicMock(), content, find_buttons=finder, monotonic=lambda: 0.0, sleep=sleep
+    )
+
+    candidate.click.assert_called_once_with(timeout=EXPAND_CLICK_TIMEOUT_MS)
+    sleep.assert_called_once_with(EXPAND_POLL_INTERVAL_SECONDS)
+
+
+def test_stale_candidate_during_poll_is_not_exposed_as_playwright_error() -> None:
+    from playwright.sync_api import Error
+
+    candidate = MagicMock()
+    candidate.evaluate.side_effect = Error("TEST CITLIVÝ DETAIL")
+    finder = _finder_with_results([candidate], [], [candidate], [])
+    content = MagicMock()
+    content.inner_text.side_effect = ["x", "x"]
+
+    with pytest.raises(ExpansionError) as captured_error:
+        expand_all_more_buttons(MagicMock(), content, find_buttons=finder, progress_timeout_ms=0)
+
+    assert "TEST CITLIVÝ DETAIL" not in str(captured_error.value)
+    candidate.click.assert_called_once_with(timeout=EXPAND_CLICK_TIMEOUT_MS)
 
 
 def test_more_than_ten_expansions_stops_before_eleventh_click() -> None:

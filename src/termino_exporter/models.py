@@ -1,6 +1,6 @@
 """Domain models used by Termino Exporter."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date as Date
 from datetime import datetime as DateTime
 from datetime import time as Time
@@ -33,4 +33,4 @@ class Reservation:
     reservation_type: str | None = None
     created_at: DateTime | None = None
     note: str | None = None
-    raw_detail: str | None = None
+    raw_detail: str | None = field(default=None, repr=False, compare=False)
