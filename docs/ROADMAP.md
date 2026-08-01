@@ -24,8 +24,32 @@ zpětnému sbalení.
 
 ## Phase 3 — Zpracovat jednu rezervaci
 
-Hotovo, když se získaný detail převede na `Reservation`, podporují se chybějící hodnoty
-a jednotkové testy parseru používají smyšlené vstupy.
+Hotovo: jeden ručně otevřený detail se strukturálně extrahuje, převede čistým parserem
+na `Reservation`, vypíše bezpečným allowlistem a zavře jedním ověřeným kliknutím.
+Podporují se chybějící hodnoty a testy používají pouze smyšlené vstupy.
+
+### Phase 3A — Model a čistý parser strukturovaných polí
+
+Model obsahuje celý `client_name`, neutrální `service_or_package`, počet osob,
+zaměstnance, typ rezervace a čas vytvoření. Čistý parser bez závislosti na Playwrightu
+přijímá strukturovanou mapu popisků a hodnot; jméno nedělí a službu ani balíček
+heuristicky neklasifikuje. `created_at` představuje lokální čas Termino bez informace o
+časové zóně a `raw_detail` zůstává pouze v paměti.
+
+### Phase 3B — Bezpečná DOM extrakce
+
+Strukturální extrakce získává mapu popisků a hodnot přímo z DOM a název klienta z
+jednoznačně ověřené `HEADER_BRANCH`. Nepoužívá plochý text jako zdroj polí. Bezpečné
+zavření i extrakce sdílejí jediný resolver struktury HEADER–CONTENT–ACTION. Před předáním
+`raw_detail` odstraní pouze ze svého paměťového klonu skutečný button `Méně`; živý DOM,
+obyčejný text v poznámce ani jiné elementy nezmění.
+
+### Phase 3C — Napojení parseru
+
+Po rozbalení se struktura povinně načte znovu. Strukturovaná mapa, `client_name` a
+očištěný `raw_detail` se předají čistému parseru a výsledný `Reservation` se vypíše jen
+přes explicitně povolená pole. `raw_detail` zůstává v paměti. Navigace přes všechny
+rezervace dne zůstává součástí Phase 4.
 
 ## Phase 4 — Zpracovat jeden celý den
 

@@ -5,11 +5,12 @@ Termino načítat rezervace ve zvoleném období a exportovat je do souboru Exce
 
 ## Stav projektu
 
-Projekt obsahuje otestovaný základ a první ruční kontrolní příkaz `inspect-one`. Tento
+Projekt obsahuje otestovaný základ a ruční kontrolní příkaz `inspect-one`. Tento
 příkaz otevře viditelný prohlížeč a nechá uživatele ručně vybrat datum i otevřít detail
-rezervace. Program potom bezpečně vypíše finální DOM text právě jednoho detailu
-do terminálu. Před výpisem bezpečně rozbalí zkrácený obsah pomocí prvků `Více`.
-Strukturované zpracování údajů a export do Excelu zatím nejsou implementovány.
+rezervace. Program bezpečně rozbalí zkrácený obsah, znovu načte aktuální strukturu DOM,
+extrahuje známá pole a převede je na jeden objekt `Reservation`. Do terminálu vypíše
+pouze explicitně povolené strukturované hodnoty. Procházení celého dne a export do
+Excelu zatím nejsou implementovány.
 
 Budoucí komunikace s Termino bude striktně **pouze pro čtení**. Aplikace nebude vytvářet,
 upravovat, kopírovat, rušit ani mazat rezervace.
@@ -93,7 +94,11 @@ Běžný `inner_text` načte celý aktuální DOM rolovacího panelu, ale dlouho
 Termino zkracuje už v DOM. Program proto před finálním čtením postupně rozbalí
 viditelné prvky `button` s přesným přístupným názvem `Více`, pouze uvnitř rolovacího
 obsahu. Po úspěchu se tlačítko změní na `Méně`; aplikace na `Méně` nikdy nekliká.
-Finální text vypíše pouze jednou po dokončení všech rozbalení.
+Po rozbalení program znovu rozpozná strukturu detailu, protože Termino může původní DOM
+nahradit. Ze strukturálních vztahů popisek → hodnota vytvoří mapu polí, název klienta
+načte z ověřené hlavičky a data převede čistým parserem na `Reservation`. Očištěný
+`raw_detail` zůstává pouze v paměti a nikdy se nevypisuje. Terminálový výstup obsahuje
+jen pevný allowlist strukturovaných hodnot v deterministickém formátu.
 
 Příkaz je určen výhradně pro čtení. Nesmí se používat k vytváření, úpravám, kopírování,
 rušení ani mazání rezervací. Podrobný bezpečný postup je v
@@ -118,5 +123,6 @@ python -m mypy src
 - [Bezpečnost a soukromí](docs/SECURITY.md)
 - [Ruční test Phase 1](docs/PHASE1_MANUAL_TEST.md)
 - [Ruční test Phase 2](docs/PHASE2_MANUAL_TEST.md)
+- [Ruční test Phase 3](docs/PHASE3_MANUAL_TEST.md)
 
 Licence zatím nebyla vlastníkem repozitáře zvolena.

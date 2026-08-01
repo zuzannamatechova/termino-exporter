@@ -1,5 +1,5 @@
 from dataclasses import FrozenInstanceError
-from datetime import date, time
+from datetime import date, datetime, time
 from decimal import Decimal
 from typing import get_type_hints
 
@@ -27,16 +27,19 @@ def test_reservation_can_be_created_with_invented_values() -> None:
         date=date(2030, 1, 15),
         start_time=time(10, 0),
         end_time=time(11, 0),
-        first_name="Anna",
-        last_name="Testová",
-        phone="+420 700 000 001",
-        email="anna.testova@example.com",
-        service="Testovací služba",
+        client_name="TEST OSOBA",
+        phone="TEST-TELEFON",
+        email="test@example.invalid",
+        service_or_package="Testovací služba",
+        people_count=1,
+        employee="Testovací zaměstnanec",
+        reservation_type="Testovací typ",
+        created_at=datetime(2030, 1, 1, 9, 30),
         duration_minutes=60,
         price=Decimal("1200.00"),
     )
 
-    assert reservation.first_name == "Anna"
+    assert reservation.client_name == "TEST OSOBA"
     assert reservation.price == Decimal("1200.00")
 
 
@@ -44,4 +47,4 @@ def test_reservation_is_immutable() -> None:
     reservation = Reservation()
 
     with pytest.raises(FrozenInstanceError):
-        reservation.first_name = "Jana"  # type: ignore[misc]
+        reservation.client_name = "JINÁ TEST OSOBA"  # type: ignore[misc]
