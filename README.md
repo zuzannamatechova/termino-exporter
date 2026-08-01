@@ -5,9 +5,11 @@ Termino načítat rezervace ve zvoleném období a exportovat je do souboru Exce
 
 ## Stav projektu
 
-Projekt nyní obsahuje pouze otestovaný základ: Python balíček, příkazovou řádku, datový
-model a vývojové nástroje. Čtení dat z Termino, ovládání prohlížeče ani export do Excelu
-zatím nejsou implementovány. Nápověda příkazové řádky tuto skutečnost výslovně uvádí.
+Projekt obsahuje otestovaný základ a první ruční kontrolní příkaz `inspect-one`. Tento
+příkaz otevře viditelný prohlížeč a nechá uživatele ručně vybrat datum i otevřít detail
+rezervace. Program potom bezpečně vypíše momentálně dostupný text právě jednoho detailu
+do terminálu. Posouvání detailu, strukturované zpracování údajů a export do Excelu zatím
+nejsou implementovány.
 
 Budoucí komunikace s Termino bude striktně **pouze pro čtení**. Aplikace nebude vytvářet,
 upravovat, kopírovat, rušit ani mazat rezervace.
@@ -38,8 +40,7 @@ python -m pip install -e ".[dev]"
 python -m playwright install chromium
 ```
 
-Poslední příkaz připraví Chromium pro budoucí vývoj. Současná aplikace prohlížeč
-nespouští.
+Poslední příkaz připraví Chromium pro příkaz `inspect-one`.
 
 ## Příkazová řádka
 
@@ -47,12 +48,51 @@ nespouští.
 python -m termino_exporter
 python -m termino_exporter --help
 python -m termino_exporter --version
+python -m termino_exporter inspect-one --help
 termino-exporter --help
 termino-exporter --version
 ```
 
-Spuštění bez argumentů zobrazí nápovědu. Žádný současný příkaz nepřistupuje k internetu,
-nespouští prohlížeč ani nevytváří Excel.
+Spuštění bez argumentů zobrazí nápovědu. Příkaz `inspect-one` jako jediný spouští
+prohlížeč a otevírá zadanou adresu. Nevytváří Excel ani neukládá text rezervace.
+
+## Ruční prohlédnutí jedné rezervace
+
+Před prvním použitím nainstalujte Chromium:
+
+```powershell
+python -m playwright install chromium
+```
+
+Potom spusťte kontrolu:
+
+```powershell
+python -m termino_exporter inspect-one
+```
+
+Prohlížeč používá persistentní profil mimo repozitář. Ve Windows je výchozí cesta
+`%LOCALAPPDATA%\TerminoExporter\browser-profile`; pokud `LOCALAPPDATA` není dostupné,
+použije se `~/.termino-exporter/browser-profile`. Cestu lze změnit pomocí
+`--profile-dir`, adresu pomocí `--url` a časový limit pomocí `--timeout-seconds`.
+
+Po otevření prohlížeče se uživatel ručně přihlásí, přejde na správné datum, klikne na
+požadovanou rezervaci a nechá detail otevřený. Teprve potom se vrátí do terminálu a
+stiskne Enter. Program automaticky nehledá ani neotevírá události.
+
+Termino otevřený detail neoznačuje standardní dialogovou rolí. Program proto vyžaduje
+právě jeden viditelný přesný popisek `Datum` a `Čas` a najde jejich nejbližší společný,
+skutečně scrollovatelný DOM předek. Detekce nepoužívá CSS třídy ani ID. Detail zavře
+pomocí nepojmenovaného ikonového křížku, pouze pokud právě jeden viditelný element
+`button` bezpečně strukturálně odpovídá: v DOM předchází rolovacímu obsahu, obsahuje
+SVG a jeho trimovaný textový obsah je prázdný. Akce `Zkopírovat rezervaci`, `Odstranit` a
+`Upravit` pod obsahem jsou výslovně vyloučeny. Nepoužívají se souřadnice, ID ani CSS
+třídy. Před kliknutím musí být jednoznačně potvrzeny sourozenecké větve v pořadí
+hlavička, rolovací obsah a zakázané akce. Program čte pouze momentálně dostupnou část detailu, neposouvá ji a nekliká
+na `Více`.
+
+Příkaz je určen výhradně pro čtení. Nesmí se používat k vytváření, úpravám, kopírování,
+rušení ani mazání rezervací. Podrobný bezpečný postup je v
+[manuálním testu Phase 1](docs/PHASE1_MANUAL_TEST.md).
 
 ## Vývoj a kontroly
 
@@ -71,5 +111,6 @@ python -m mypy src
 - [Plán vývoje](docs/ROADMAP.md)
 - [Datový model](docs/DATA_MODEL.md)
 - [Bezpečnost a soukromí](docs/SECURITY.md)
+- [Ruční test Phase 1](docs/PHASE1_MANUAL_TEST.md)
 
 Licence zatím nebyla vlastníkem repozitáře zvolena.

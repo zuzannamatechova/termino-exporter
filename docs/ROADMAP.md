@@ -8,8 +8,11 @@ kontrola formátování a typová kontrola a je nakonfigurované CI.
 ## Phase 1 — Prohlédnout jednu ručně vybranou rezervaci
 
 Hotovo, když se otevře viditelný prohlížeč Playwright, uživatel se může ručně přihlásit,
-jedna známá rezervace se bezpečně otevře, úplný text dialogu lze lokálně vypsat a žádná
-data se neuloží do Gitu.
+ručně přejde na správné datum a sám otevře jednu známou rezervaci, aktuálně dostupný text
+detailu lze lokálně vypsat a žádná data se neuloží do Gitu. Termino nepoužívá standardní
+dialogovou roli, proto se obsah bezpečně určí přes jedinečné statické popisky `Datum` a
+`Čas` a jejich společného skutečně scrollovatelného DOM předka, bez CSS tříd a ID.
+Uživatel detail stále otevírá ručně; program jej neposouvá ani nekliká na `Více`.
 
 ## Phase 2 — Načíst a posouvat jeden celý dialog
 
