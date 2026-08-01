@@ -1,7 +1,6 @@
 """Safe browser context setup for local Termino inspection."""
 
 import os
-import subprocess
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
@@ -29,37 +28,17 @@ def default_profile_dir(
     return (Path.home() if home is None else home) / ".termino-exporter" / "browser-profile"
 
 
-def _find_repository_root(start: Path) -> Path | None:
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            cwd=start,
-            check=False,
-            capture_output=True,
-            encoding="utf-8",
-            text=True,
-        )
-    except OSError:
-        result = None
-    if result is not None and result.returncode == 0 and result.stdout.strip():
-        return Path(result.stdout.strip()).resolve()
-
-    for directory in (start, *start.parents):
-        if (directory / ".git").exists():
-            return directory.resolve()
-    return None
+def _is_inside_git_repository(path: Path) -> bool:
+    """Return whether path itself or any parent is marked as a Git repository."""
+    return any((directory / ".git").exists() for directory in (path, *path.parents))
 
 
 def safe_profile_dir(profile_dir: Path, working_directory: Path | None = None) -> Path:
-    """Resolve a profile path and reject locations inside the current project."""
-    current_directory = (
-        Path.cwd().resolve() if working_directory is None else working_directory.resolve()
-    )
+    """Resolve a profile path and reject locations inside any Git repository."""
+    del working_directory  # Kept for backwards-compatible callers; safety is target-based.
     resolved_profile = profile_dir.expanduser().resolve()
-    repository_root = _find_repository_root(current_directory)
-    protected_root = repository_root if repository_root is not None else current_directory
-    if resolved_profile == protected_root or protected_root in resolved_profile.parents:
-        raise ProfilePathError("Adresář profilu nesmí být uvnitř projektu.")
+    if _is_inside_git_repository(resolved_profile):
+        raise ProfilePathError("Adresář profilu nesmí být uvnitř Git repozitáře.")
     return resolved_profile
 
 

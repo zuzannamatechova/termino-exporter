@@ -74,7 +74,9 @@ python -m termino_exporter inspect-one
 Prohlížeč používá persistentní profil mimo repozitář. Ve Windows je výchozí cesta
 `%LOCALAPPDATA%\TerminoExporter\browser-profile`; pokud `LOCALAPPDATA` není dostupné,
 použije se `~/.termino-exporter/browser-profile`. Cestu lze změnit pomocí
-`--profile-dir`, adresu pomocí `--url` a časový limit pomocí `--timeout-seconds`.
+`--profile-dir`, adresu pomocí `--url` a časový limit pomocí `--timeout-seconds`. Zvolený
+profil nesmí ležet uvnitř žádného Git repozitáře; kontroluje se cílová cesta a všechny
+její rodiče nezávisle na adresáři, ze kterého byla aplikace spuštěna.
 
 Po otevření prohlížeče se uživatel ručně přihlásí, přejde na správné datum, klikne na
 požadovanou rezervaci a nechá detail otevřený. Teprve potom se vrátí do terminálu a
@@ -94,11 +96,14 @@ Běžný `inner_text` načte celý aktuální DOM rolovacího panelu, ale dlouho
 Termino zkracuje už v DOM. Program proto před finálním čtením postupně rozbalí
 viditelné prvky `button` s přesným přístupným názvem `Více`, pouze uvnitř rolovacího
 obsahu. Po úspěchu se tlačítko změní na `Méně`; aplikace na `Méně` nikdy nekliká.
+Po jediném kliknutí na konkrétní `Více` aplikace omezenou dobu čeká na potvrzenou změnu
+DOM. Stejné tlačítko podruhé neklikne a při vypršení limitu zpracování bezpečně ukončí.
 Po rozbalení program znovu rozpozná strukturu detailu, protože Termino může původní DOM
 nahradit. Ze strukturálních vztahů popisek → hodnota vytvoří mapu polí, název klienta
 načte z ověřené hlavičky a data převede čistým parserem na `Reservation`. Očištěný
-`raw_detail` zůstává pouze v paměti a nikdy se nevypisuje. Terminálový výstup obsahuje
-jen pevný allowlist strukturovaných hodnot v deterministickém formátu.
+`raw_detail` zůstává pouze v paměti, není součástí `repr`, neovlivňuje rovnost objektů a
+nikdy se nevypisuje. Terminálový výstup obsahuje jen pevný allowlist strukturovaných
+hodnot v deterministickém formátu. Phase 4 zatím nebyla zahájena.
 
 Příkaz je určen výhradně pro čtení. Nesmí se používat k vytváření, úpravám, kopírování,
 rušení ani mazání rezervací. Podrobný bezpečný postup je v
