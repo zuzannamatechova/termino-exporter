@@ -296,7 +296,7 @@ def test_playwright_error_is_sanitized_and_closes_nothing(
     initial.close_control.click.assert_not_called()
 
 
-def test_only_two_production_click_sites_and_no_click_in_extraction_or_parser() -> None:
+def test_existing_detail_flow_keeps_two_click_sites_and_no_other_phase3_clicks() -> None:
     inspection_source = inspect.getsource(inspection_module)
     extraction_source = inspect.getsource(extraction_module)
     parsing_source = inspect.getsource(parsing_module)
