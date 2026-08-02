@@ -63,6 +63,24 @@ objektů. Phase 4 tímto zpevněním nebyla zahájena.
 Hotovo, když se zpracují všechny klientské rezervace dne, přeskočí se blokace a
 neklientské události, jedna chyba nezastaví ostatní rezervace a zabrání se duplicitám.
 
+### Phase 4A — Bezpečná diagnostika kalendáře
+
+Probíhá pouze strukturální diagnostika celého aktuálně zobrazeného pohledu Den, 3 dny,
+Týden nebo Agenda, který uživatel zvolí ručně. Počet sloupců není natvrdo omezen na sedm.
+Program události neotevírá, neklasifikuje ani nezpracovává a na nic nekliká. Phase 4 jako
+celek ještě není hotová.
+
+První živý test bezpečně nepotvrdil očekávaný semantický kořen. Diagnostika proto používá
+přesnější strukturální kotvu `gridcell`; při nule nebo více platných vrstvách skončí
+pevným bezpečným kódem a nikdy nevybere první shodu.
+
+Aktuální anonymní DOM pozorování ukotvuje diagnostiku přes jednoznačnou vrstvu denních
+větví s rolí `gridcell`. Vedle ní existují pravidelná časová mřížka a prázdné pomocné
+vrstvy. Event layer musí mít stejný počet větví a jako jediná obsahovat alespoň jeden malý
+neprázdný obsahový blok; element bez textu se nepočítá. Nerozpoznaná záhlaví mimo společný
+předek neblokují anonymní výstup. Zcela prázdné období zatím nelze bezpečně rozlišit.
+Phase 4A bloky pouze počítá; rezervace a blokace nerozlišuje. Phase 4B není implementována.
+
 ## Phase 5 — Zpracovat rozsah dat
 
 Hotovo, když uživatel zadá počáteční a koncové datum, aplikace prochází kalendář, každé

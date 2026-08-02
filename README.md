@@ -50,12 +50,33 @@ python -m termino_exporter
 python -m termino_exporter --help
 python -m termino_exporter --version
 python -m termino_exporter inspect-one --help
+python -m termino_exporter diagnose-calendar --help
 termino-exporter --help
 termino-exporter --version
 ```
 
-Spuštění bez argumentů zobrazí nápovědu. Příkaz `inspect-one` jako jediný spouští
-prohlížeč a otevírá zadanou adresu. Nevytváří Excel ani neukládá text rezervace.
+Spuštění bez argumentů zobrazí nápovědu. Příkazy `inspect-one` a `diagnose-calendar` spouštějí
+prohlížeč a otevírají zadanou adresu. Nevytvářejí Excel ani neukládají text rezervace.
+
+`diagnose-calendar` je pouze Phase 4A diagnostika celého aktuálně zobrazeného pohledu.
+Termino může zobrazit Den, 3 dny, Týden nebo Agendu; uživatel pohled vybírá ručně a
+program nepředpokládá právě sedm sloupců. Neotevírá detail a na nic nekliká. Výstup
+obsahuje pouze agregované strukturální počty a normalizované údaje záhlaví bez textů
+událostí nebo atributových hodnot. Neukládá HTML, screenshoty ani jiné diagnostické
+artefakty a Phase 4 jako celek není hotová.
+
+První živý test bezpečně skončil bez nalezeného semantického kořene, protože Termino
+nepoužilo očekávané role. Novější anonymní pozorování proto používá přesnější kotvu
+`gridcell`; při chybějící nebo víceznačné vrstvě diagnostika skončí pevným bezpečným
+kódem a nevybírá produkční kořen ani událost.
+
+Anonymní pozorování týdenního DOM ukázalo samostatnou vrstvu denních větví obsahujících
+`gridcell`, pravidelnou časovou mřížku, prázdné pomocné paralelní vrstvy a paralelní vrstvu
+obecných bloků událostí. Event layer musí mít stejný počet sloupců a jako jediná obsahovat
+alespoň jeden malý neprázdný obsahový blok; pomocný element bez textu se nezapočítá.
+Záhlaví mohou ležet mimo analyzovaného společného předka, proto jejich nerozpoznání nebrání
+anonymnímu výstupu vrstev. Ve zcela prázdném období nelze event layer tímto pravidlem
+bezpečně určit. Rezervace a blokace se v Phase 4A nerozlišují a Phase 4B není implementována.
 
 ## Ruční prohlédnutí jedné rezervace
 
@@ -129,5 +150,6 @@ python -m mypy src
 - [Ruční test Phase 1](docs/PHASE1_MANUAL_TEST.md)
 - [Ruční test Phase 2](docs/PHASE2_MANUAL_TEST.md)
 - [Ruční test Phase 3](docs/PHASE3_MANUAL_TEST.md)
+- [Bezpečná diagnostika kalendáře Phase 4A](docs/PHASE4A_CALENDAR_DIAGNOSTIC.md)
 
 Licence zatím nebyla vlastníkem repozitáře zvolena.
