@@ -20,6 +20,22 @@ Repozitář je veřejný. V testech, příkladech a dokumentaci smějí být pou
   DOM. Stejný kandidát nikdy neklikne podruhé a na tlačítko `Méně` nekliká vůbec.
 - `raw_detail` zůstává pouze v paměti, je skrytý z `repr`, neovlivňuje rovnost objektů a
   nesmí se objevit ve strukturovaném výstupu ani chybové zprávě.
+- Diagnostika kalendáře čte pouze omezené strukturální metriky celého aktuálního pohledu. Nevrací
+  text prvků ani hodnoty `aria-label`, `href` nebo `data-*`, nekliká a neukládá HTML,
+  screenshoty, trace, video ani HAR.
+- Browserový census vrací pouze explicitně sestavený omezený snapshot čísel a booleanů.
+  Snapshot je před použitím validován a vrstvy vybírá čistý Python resolver testovatelný
+  bez browseru; neplatná data končí pevným bezpečným chybovým kódem bez jejich `repr`.
+- Při chybějící nebo víceznačné vrstvě mřížky či událostí diagnostika skončí pevným
+  bezpečným kódem. Nerozpoznaná záhlaví mohou zůstat nepřipojená a jejich hodnoty budou
+  `None`; neblokují anonymní strukturální výstup. Diagnostika nevrací DOM elementy, text ani
+  atributové hodnoty a žádná událost se automaticky neotevírá.
+- Kalendářová vrstva se kotví pouze přes přesnou standardní roli `gridcell`. Paralelní
+  event layer musí mít stejný počet denních větví, být jednoznačná a obsahovat alespoň jeden
+  omezený neprázdný obsahový blok. Prázdné pomocné vrstvy, pravidelná časová mřížka a
+  elementy bez textu se nevybírají. Ve zcela prázdném období se event layer neodhaduje.
+  Obecné event blocks mohou být neinteraktivní `div`; rezervace a blokace se neklasifikují
+  podle textu, potomků, ikon, barev, tříd, ID ani vzhledu.
 - Jakákoli budoucí zapisující akce vyžaduje samostatné výslovné návrhové rozhodnutí a
   nesmí vzniknout jako vedlejší efekt jiné úlohy.
 

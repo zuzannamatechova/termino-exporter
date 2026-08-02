@@ -15,6 +15,7 @@ from termino_exporter.browser import (
     default_profile_dir,
     safe_profile_dir,
 )
+from termino_exporter.calendar_diagnosis import CalendarDiagnosisError, diagnose_calendar
 from termino_exporter.close_diagnosis import CloseDiagnosisError
 from termino_exporter.diagnosis import DiagnosisError
 from termino_exporter.inspection import InspectionError, inspect_one_reservation
@@ -119,6 +120,38 @@ def create_parser() -> CzechArgumentParser:
         action="store_true",
         help="vypíše pouze bezpečnou strukturální diagnostiku tlačítek detailu",
     )
+    calendar_parser = subparsers.add_parser(
+        "diagnose-calendar",
+        help="bezpečně diagnostikuje aktuální kalendářní pohled",
+        description=(
+            "Spustí viditelný prohlížeč a bez klikání vypíše pouze agregované strukturální "
+            "údaje celého aktuálně zobrazeného kalendáře."
+        ),
+        add_help=False,
+    )
+    calendar_parser._positionals.title = "poziční argumenty"
+    calendar_parser._optionals.title = "volby"
+    calendar_parser.add_argument(
+        "-h", "--help", action="help", help="zobrazí tuto nápovědu a skončí"
+    )
+    calendar_parser.add_argument(
+        "--url",
+        type=_web_url,
+        default=DEFAULT_URL,
+        help=f"adresa kalendáře (výchozí: {DEFAULT_URL})",
+    )
+    calendar_parser.add_argument(
+        "--profile-dir",
+        type=Path,
+        default=None,
+        help="cesta k vyhrazenému lokálnímu profilu prohlížeče",
+    )
+    calendar_parser.add_argument(
+        "--timeout-seconds",
+        type=_positive_seconds,
+        default=DEFAULT_TIMEOUT_SECONDS,
+        help=f"časový limit operací v sekundách (výchozí: {DEFAULT_TIMEOUT_SECONDS:g})",
+    )
     return parser
 
 
@@ -147,6 +180,22 @@ def _run_inspect_one(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_diagnose_calendar(args: argparse.Namespace) -> int:
+    try:
+        requested_profile = (
+            args.profile_dir if args.profile_dir is not None else default_profile_dir()
+        )
+        diagnose_calendar(
+            url=args.url,
+            profile_dir=safe_profile_dir(requested_profile),
+            timeout_seconds=args.timeout_seconds,
+        )
+    except (BrowserError, CalendarDiagnosisError, ProfilePathError) as error:
+        print(f"Chyba: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the command-line interface."""
     for stream in (sys.stdout, sys.stderr):
@@ -156,5 +205,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "inspect-one":
         return _run_inspect_one(args)
+    if args.command == "diagnose-calendar":
+        return _run_diagnose_calendar(args)
     parser.print_help()
     return 0
