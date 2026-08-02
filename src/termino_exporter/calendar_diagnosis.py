@@ -24,17 +24,20 @@ MAX_COLUMNS = 14
 MAX_EVENT_DESCENDANTS = 30
 
 CALENDAR_DIAGNOSIS_SCRIPT = r"""
-() => {
+(selection) => {
   const MAX_DEPTH = 12;
   const MAX_ELEMENTS = 5000;
   const MAX_CONTEXTS = 20;
   const MAX_LAYERS = 20;
+  const MAX_GRID_ANCHORS = MAX_CONTEXTS * MAX_LAYERS;
   const MAX_COLUMNS = 14;
   const MAX_COMMON_ANCESTORS = 4;
   const MAX_EVENT_DESCENDANTS = 30;
   const EXCLUDED_BLOCK_TAGS = new Set([
     "input", "option", "path", "select", "svg", "textarea"
   ]);
+  const handleMode = selection !== undefined && selection !== null;
+  const fail = (code) => handleMode ? {status: code, element: null} : {error: code};
   const WEEKDAYS = new Map([
     ["po", 0], ["út", 1], ["st", 2], ["čt", 3], ["pá", 4], ["so", 5], ["ne", 6]
   ]);
@@ -67,6 +70,20 @@ CALENDAR_DIAGNOSIS_SCRIPT = r"""
     return {weekday_index: WEEKDAYS.get(match[1]), day_number: Number(match[2])};
   };
   const directVisibleChildren = (element) => Array.from(element.children).filter(visible);
+  const sameNumberArray = (actual, expected) =>
+    Array.isArray(expected) && actual.length === expected.length &&
+    actual.every((value, index) => value === expected[index]);
+  const matchesLayerFingerprint = (layer, fingerprint) =>
+    fingerprint !== null && typeof fingerprint === "object" &&
+    layer.branch_count === fingerprint.branch_count &&
+    sameNumberArray(layer.gridcell_counts, fingerprint.gridcell_counts) &&
+    sameNumberArray(layer.direct_child_counts, fingerprint.direct_child_counts) &&
+    sameNumberArray(layer.descendant_counts, fingerprint.descendant_counts) &&
+    sameNumberArray(layer.event_block_counts, fingerprint.event_block_counts) &&
+    layer.navigation_like === fingerprint.navigation_like &&
+    layer.header_like === fingerprint.header_like &&
+    layer.shadowed_by_nested_equivalent_grid_anchor ===
+      fingerprint.shadowed_by_nested_equivalent_grid_anchor;
 
   const records = [];
   const queue = [{element: document.body, depth: 0}];
@@ -79,7 +96,7 @@ CALENDAR_DIAGNOSIS_SCRIPT = r"""
       queue.push({element: child, depth: current.depth + 1});
     }
   }
-  if (records.length >= MAX_ELEMENTS) return {error: "CALENDAR_DIAG_LIMIT_EXCEEDED"};
+  if (records.length >= MAX_ELEMENTS) return fail("CALENDAR_DIAG_LIMIT_EXCEEDED");
   const all = records.map((record) => record.element);
   const descendantsOf = (element) => all.filter((candidate) =>
     candidate !== element && element.contains(candidate)
@@ -110,31 +127,54 @@ CALENDAR_DIAGNOSIS_SCRIPT = r"""
     const count = directVisibleChildren(element).length;
     return count >= 1 && count <= MAX_COLUMNS;
   });
-  const gridAnchors = layerElements.filter((element) => {
+  const gridAnchors = layerElements.map((element) => {
     const branches = directVisibleChildren(element);
-    return !underNavigation(element) && branches.every((branch) =>
+    const gridcells = branches.map((branch) =>
       descendantsOf(branch).filter((candidate) =>
         visible(candidate) && exactRole(candidate, "gridcell")
-      ).length === 1
+      )
     );
-  });
-  if (!gridAnchors.length) return {contexts: [], header_groups: []};
-
-  const contextRoots = [];
-  for (const anchor of gridAnchors) {
-    const root = anchor.parentElement;
-    if (!root) continue;
-    if (!contextRoots.includes(root)) contextRoots.push(root);
+    return {element, branches, gridcells};
+  }).filter((anchor) =>
+    !underNavigation(anchor.element) &&
+    anchor.gridcells.every((matches) => matches.length === 1)
+  );
+  if (gridAnchors.length > MAX_GRID_ANCHORS) return fail("CALENDAR_DIAG_LIMIT_EXCEEDED");
+  if (!gridAnchors.length) {
+    return handleMode ? fail("SINGLE_EVENT_HANDLE_NOT_FOUND") : {contexts: [], header_groups: []};
   }
-  if (contextRoots.length > MAX_CONTEXTS) return {error: "CALENDAR_DIAG_LIMIT_EXCEEDED"};
+
+  const nestedEquivalent = (outer, inner) =>
+    outer !== inner && outer.element.contains(inner.element) &&
+    outer.branches.length === inner.branches.length &&
+    outer.gridcells.every((matches, index) => matches[0] === inner.gridcells[index][0]);
+  const shadowedGridAnchors = new Map(gridAnchors.map((outer) => [
+    outer.element,
+    gridAnchors.some((inner) => nestedEquivalent(outer, inner)),
+  ]));
+  const canonicalGridAnchors = gridAnchors.filter(
+    (anchor) => shadowedGridAnchors.get(anchor.element) === false
+  );
+
+  const contextDefinitions = [];
+  for (const canonical of canonicalGridAnchors) {
+    const root = canonical.element.parentElement;
+    if (!root) continue;
+    if (!contextDefinitions.some((candidate) => candidate.root === root)) {
+      contextDefinitions.push({root});
+    }
+  }
+  if (contextDefinitions.length > MAX_CONTEXTS) return fail("CALENDAR_DIAG_LIMIT_EXCEEDED");
 
   const contexts = [];
-  for (const root of contextRoots) {
+  const contextElements = [];
+  for (const definition of contextDefinitions) {
+    const root = definition.root;
     const candidates = directVisibleChildren(root).filter((element) => {
       const count = directVisibleChildren(element).length;
       return count >= 1 && count <= MAX_COLUMNS;
     });
-    if (candidates.length > MAX_LAYERS) return {error: "CALENDAR_DIAG_LIMIT_EXCEEDED"};
+    if (candidates.length > MAX_LAYERS) return fail("CALENDAR_DIAG_LIMIT_EXCEEDED");
     const layers = [];
     for (const element of candidates) {
       const branches = directVisibleChildren(element);
@@ -156,9 +196,13 @@ CALENDAR_DIAGNOSIS_SCRIPT = r"""
         event_block_counts: eventBlockCounts.map((count) => Number(count)),
         navigation_like: Boolean(underNavigation(element)),
         header_like: Boolean(headerLike),
+        shadowed_by_nested_equivalent_grid_anchor: Boolean(
+          shadowedGridAnchors.get(element) === true
+        ),
       });
     }
     contexts.push({layers});
+    contextElements.push(candidates);
   }
   const headerGroups = [];
   for (const element of layerElements) {
@@ -178,7 +222,51 @@ CALENDAR_DIAGNOSIS_SCRIPT = r"""
       headers_distinct: new Set(keys).size === keys.length,
     });
   }
-  if (headerGroups.length > MAX_LAYERS) return {error: "CALENDAR_DIAG_LIMIT_EXCEEDED"};
+  if (headerGroups.length > MAX_LAYERS) return fail("CALENDAR_DIAG_LIMIT_EXCEEDED");
+  if (handleMode) {
+    if (selection.column_ordinal !== 1 || selection.event_ordinal !== 1 ||
+        selection.column_count !== 1 || !Array.isArray(selection.event_block_counts) ||
+        selection.event_block_counts.length !== 1 || selection.event_block_counts[0] !== 1) {
+      return fail("CALENDAR_STRUCTURE_CHANGED");
+    }
+    if (contexts.length !== 1) return fail("CALENDAR_STRUCTURE_CHANGED");
+    const contextIndex = 0;
+    const liveLayers = contexts[contextIndex].layers;
+    const gridIndexes = liveLayers.map((layer, index) => ({layer, index})).filter((item) =>
+      !item.layer.shadowed_by_nested_equivalent_grid_anchor &&
+      item.layer.gridcell_counts.every((count) => count === 1)
+    );
+    if (gridIndexes.length !== 1) return fail("CALENDAR_STRUCTURE_CHANGED");
+    if (!matchesLayerFingerprint(gridIndexes[0].layer, selection.grid_layer)) {
+      return fail("CALENDAR_STRUCTURE_CHANGED");
+    }
+    const eventIndexes = liveLayers.map((layer, index) => ({layer, index})).filter((item) =>
+      item.index > gridIndexes[0].index &&
+      item.layer.branch_count === gridIndexes[0].layer.branch_count &&
+      item.layer.gridcell_counts.every((count) => count === 0) &&
+      !item.layer.navigation_like && !item.layer.header_like &&
+      item.layer.event_block_counts.reduce((total, count) => total + count, 0) > 0
+    );
+    if (eventIndexes.length !== 1) return fail("CALENDAR_STRUCTURE_CHANGED");
+    const layerIndex = eventIndexes[0].index;
+    const layer = contexts[contextIndex].layers[layerIndex];
+    if (layer.branch_count !== 1 || layer.event_block_counts.length !== 1 ||
+        layer.event_block_counts[0] !== 1) {
+      return fail("CALENDAR_STRUCTURE_CHANGED");
+    }
+    if (!matchesLayerFingerprint(layer, selection.event_layer)) {
+      return fail("CALENDAR_STRUCTURE_CHANGED");
+    }
+    const liveLayer = contextElements[contextIndex][layerIndex];
+    const branches = directVisibleChildren(liveLayer);
+    if (branches.length !== 1) return fail("CALENDAR_STRUCTURE_CHANGED");
+    const blocks = blocksForBranch(branches[0]);
+    if (!blocks.length) return fail("SINGLE_EVENT_HANDLE_NOT_FOUND");
+    if (blocks.length !== 1) return fail("SINGLE_EVENT_HANDLE_AMBIGUOUS");
+    const block = blocks[0];
+    if (!block.isConnected || !visible(block)) return fail("SINGLE_EVENT_HANDLE_NOT_FOUND");
+    return {status: "ok", element: block};
+  }
   return {
     contexts: contexts.map((context) => ({layers: context.layers})),
     header_groups: headerGroups.map((group) => ({
@@ -206,6 +294,7 @@ class RawCalendarLayerSnapshot(TypedDict):
     event_block_counts: list[int]
     navigation_like: bool
     header_like: bool
+    shadowed_by_nested_equivalent_grid_anchor: bool
 
 
 class RawCalendarContextSnapshot(TypedDict):
@@ -237,6 +326,7 @@ class CalendarLayerSnapshot:
     event_block_counts: tuple[int, ...]
     navigation_like: bool
     header_like: bool
+    shadowed_by_nested_equivalent_grid_anchor: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -300,9 +390,12 @@ def _layer(payload: object) -> CalendarLayerSnapshot:
     if not isinstance(payload, Mapping):
         raise ValueError
     branch_count = _bounded_int(payload.get("branch_count"), MAX_COLUMNS, minimum=1)
-    if not isinstance(payload.get("navigation_like"), bool) or not isinstance(
-        payload.get("header_like"), bool
-    ):
+    boolean_fields = (
+        "navigation_like",
+        "header_like",
+        "shadowed_by_nested_equivalent_grid_anchor",
+    )
+    if not all(isinstance(payload.get(name), bool) for name in boolean_fields):
         raise ValueError
     return CalendarLayerSnapshot(
         branch_count=branch_count,
@@ -312,6 +405,9 @@ def _layer(payload: object) -> CalendarLayerSnapshot:
         event_block_counts=_int_tuple(payload.get("event_block_counts"), branch_count),
         navigation_like=payload["navigation_like"],
         header_like=payload["header_like"],
+        shadowed_by_nested_equivalent_grid_anchor=payload[
+            "shadowed_by_nested_equivalent_grid_anchor"
+        ],
     )
 
 
@@ -379,7 +475,9 @@ def deserialize_calendar_snapshot(payload: object) -> CalendarDomSnapshot:
 
 
 def _is_grid_layer(layer: CalendarLayerSnapshot) -> bool:
-    return all(count == 1 for count in layer.gridcell_counts)
+    return not layer.shadowed_by_nested_equivalent_grid_anchor and all(
+        count == 1 for count in layer.gridcell_counts
+    )
 
 
 def _validate_snapshot_model(snapshot: CalendarDomSnapshot) -> None:
@@ -401,8 +499,13 @@ def _validate_snapshot_model(snapshot: CalendarDomSnapshot) -> None:
                         raise ValueError
                     for value in values:
                         _bounded_int(value, MAX_DOM_ELEMENTS)
-                if not isinstance(layer.navigation_like, bool) or not isinstance(
-                    layer.header_like, bool
+                if not all(
+                    isinstance(value, bool)
+                    for value in (
+                        layer.navigation_like,
+                        layer.header_like,
+                        layer.shadowed_by_nested_equivalent_grid_anchor,
+                    )
                 ):
                     raise ValueError
         for group in snapshot.header_groups:
@@ -426,21 +529,21 @@ def resolve_calendar_snapshot(snapshot: CalendarDomSnapshot) -> CalendarLayerDia
     """Resolve one calendar context from a safe immutable census snapshot."""
     _validate_snapshot_model(snapshot)
     grid_candidates = [
-        (context, layer)
+        (context, layer_index, layer)
         for context in snapshot.contexts
-        for layer in context.layers
+        for layer_index, layer in enumerate(context.layers)
         if _is_grid_layer(layer)
     ]
     if not grid_candidates:
         raise CalendarDiagnosisError("GRIDCELL_LAYER_NOT_FOUND")
     if len(grid_candidates) != 1:
         raise CalendarDiagnosisError("GRIDCELL_LAYER_AMBIGUOUS")
-    context, grid_layer = grid_candidates[0]
+    context, grid_layer_index, grid_layer = grid_candidates[0]
     column_count = grid_layer.branch_count
     event_candidates = [
         layer
-        for layer in context.layers
-        if layer is not grid_layer
+        for layer_index, layer in enumerate(context.layers)
+        if layer_index > grid_layer_index
         and layer.branch_count == column_count
         and not any(layer.gridcell_counts)
         and not layer.navigation_like
@@ -495,9 +598,14 @@ def resolve_calendar_snapshot(snapshot: CalendarDomSnapshot) -> CalendarLayerDia
 
 def diagnose_calendar_structure(page: Page) -> CalendarLayerDiagnosis:
     """Read, validate and resolve the structural census for the current view."""
+    return resolve_calendar_snapshot(read_calendar_snapshot(page))
+
+
+def read_calendar_snapshot(page: Page) -> CalendarDomSnapshot:
+    """Read and validate one anonymous calendar census without resolving it."""
     try:
         payload: Any = page.evaluate(CALENDAR_DIAGNOSIS_SCRIPT)
-        return resolve_calendar_snapshot(deserialize_calendar_snapshot(payload))
+        return deserialize_calendar_snapshot(payload)
     except CalendarDiagnosisError:
         raise
     except Error as error:

@@ -36,8 +36,26 @@ Repozitář je veřejný. V testech, příkladech a dokumentaci smějí být pou
   elementy bez textu se nevybírají. Ve zcela prázdném období se event layer neodhaduje.
   Obecné event blocks mohou být neinteraktivní `div`; rezervace a blokace se neklasifikují
   podle textu, potomků, ikon, barev, tříd, ID ani vzhledu.
+- Vnořené grid anchory se považují za ekvivalentní pouze při stejném počtu větví a shodě
+  uspořádaných živých DOM elementů `gridcell`. Porovnání identity probíhá výhradně uvnitř
+  browserového skriptu. Context root určuje pouze kanonický anchor; zastíněné vnější obaly
+  se nepoužijí jako kořen ani se nepřidávají jako duplicitní snapshot vrstvy. Nezávislé
+  kandidáty se neslučují a první ani obecně nejhlubší shoda se automaticky nevybírá.
+- Přímé děti context rootu jsou paralelní vrstvy a jejich počet není počet dnů. Event layer
+  musí následovat za kanonickou grid vrstvou, mít stejný `branch_count`, neobsahovat
+  `gridcell`, nebýt navigací ani záhlavím a být jediným platným kandidátem. Obsahová vrstva
+  před gridem se nikdy automaticky nepoužije.
 - Jakákoli budoucí zapisující akce vyžaduje samostatné výslovné návrhové rozhodnutí a
   nesmí vzniknout jako vedlejší efekt jiné úlohy.
+- Phase 4B vytvoří pouze interní plán z čerstvého anonymního snapshotu. Druhý nezávislý
+  census znovu provede jednoznačné rozpoznání a porovná pouze anonymní významový fingerprint
+  počtu sloupců a bloků a omezených číselných a booleanových metrik vybrané grid a event
+  vrstvy. Ordinaly platí jen uvnitř jednoho snapshotu, mezi censy se jako identita
+  neporovnávají a atomický resolver podle starého ordinalu neindexuje.
+- Na ověřený event block se kliká nejvýše jednou, bez `force`, souřadnic nebo opakování.
+  Kalendářní text se nepoužívá ke klasifikaci. Pouze jednoznačná známá struktura detailu
+  dovolí předání existujícímu zpracování rezervace; neznámý detail se nezavírá neověřeným
+  prvkem a operace bezpečně skončí.
 
 Před commitem je nutné zkontrolovat změny i neznámé soubory a ověřit, že neobsahují
 osobní, autentizační ani produkční data.

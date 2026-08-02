@@ -51,6 +51,7 @@ python -m termino_exporter --help
 python -m termino_exporter --version
 python -m termino_exporter inspect-one --help
 python -m termino_exporter diagnose-calendar --help
+python -m termino_exporter inspect-single-event --help
 termino-exporter --help
 termino-exporter --version
 ```
@@ -76,7 +77,16 @@ obecných bloků událostí. Event layer musí mít stejný počet sloupců a ja
 alespoň jeden malý neprázdný obsahový blok; pomocný element bez textu se nezapočítá.
 Záhlaví mohou ležet mimo analyzovaného společného předka, proto jejich nerozpoznání nebrání
 anonymnímu výstupu vrstev. Ve zcela prázdném období nelze event layer tímto pravidlem
-bezpečně určit. Rezervace a blokace se v Phase 4A nerozlišují a Phase 4B není implementována.
+bezpečně určit. Rezervace a blokace se v Phase 4A nerozlišují.
+
+`inspect-single-event` je omezená Phase 4B určená pouze pro ručně zvolený pohled Den s
+právě jednou zjevně testovací klientskou rezervací. Program dvakrát provede nezávislé
+jednoznačné rozpoznání a porovná pouze anonymní významový fingerprint; ordinaly vrstev
+platí jen uvnitř jednoho snapshotu. Bezprostředně před interakcí atomicky znovu najde jediný
+event block a provede na něm jediný pokus o kliknutí. Událost neklasifikuje podle
+kalendářního textu ani vzhledu. Teprve známá struktura otevřeného detailu potvrdí podporovanou
+rezervaci a následné zpracování znovu použije existující `inspect_open_detail`. Neznámý detail
+operaci bezpečně ukončí.
 
 ## Ruční prohlédnutí jedné rezervace
 
@@ -151,5 +161,6 @@ python -m mypy src
 - [Ruční test Phase 2](docs/PHASE2_MANUAL_TEST.md)
 - [Ruční test Phase 3](docs/PHASE3_MANUAL_TEST.md)
 - [Bezpečná diagnostika kalendáře Phase 4A](docs/PHASE4A_CALENDAR_DIAGNOSTIC.md)
+- [Jedna testovací událost Phase 4B](docs/PHASE4B_SINGLE_EVENT.md)
 
 Licence zatím nebyla vlastníkem repozitáře zvolena.

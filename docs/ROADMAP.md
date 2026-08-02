@@ -79,7 +79,18 @@ větví s rolí `gridcell`. Vedle ní existují pravidelná časová mřížka a
 vrstvy. Event layer musí mít stejný počet větví a jako jediná obsahovat alespoň jeden malý
 neprázdný obsahový blok; element bez textu se nepočítá. Nerozpoznaná záhlaví mimo společný
 předek neblokují anonymní výstup. Zcela prázdné období zatím nelze bezpečně rozlišit.
-Phase 4A bloky pouze počítá; rezervace a blokace nerozlišuje. Phase 4B není implementována.
+Phase 4A bloky pouze počítá; rezervace a blokace nerozlišuje.
+
+### Phase 4B — Jedna testovací událost v pohledu Den
+
+Program v ručně zvoleném pohledu Den vyžaduje právě jeden obecný calendar event block.
+Z čerstvého anonymního snapshotu vytvoří neměnný plán, druhým nezávislým rozpoznáním ověří
+stejný anonymní významový fingerprint a na jediný atomicky znovunalezený DOM element klikne
+nejvýše jednou. Snapshotové ordinaly nejsou identitou mezi censy. Kalendářní blok se
+neklasifikuje podle textu ani vzhledu. Rezervaci potvrzuje až známá struktura otevřeného
+detailu; poté se znovu použije existující zpracování jednoho detailu. Neznámá struktura
+skončí bezpečně. Více událostí, blokace a celý den zůstávají pro další fázi a Phase 4 jako
+celek ještě není dokončená.
 
 ## Phase 5 — Zpracovat rozsah dat
 

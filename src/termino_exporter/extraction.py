@@ -262,18 +262,17 @@ def _visible_matches(locator: Locator) -> list[Locator]:
     return matches
 
 
-def _one_visible_label(page: Page, label: str) -> Locator:
-    matches = _visible_matches(page.get_by_text(label, exact=True))
-    if len(matches) != 1:
-        raise ReservationExtractionError("DETAIL_STRUCTURE_NOT_UNIQUE")
-    return matches[0]
-
-
 def find_detail_content(page: Page) -> ElementHandle:
     """Find the bounded genuinely scrollable content containing Datum and Čas."""
     try:
-        date_element = _one_visible_label(page, "Datum").element_handle()
-        time_element = _one_visible_label(page, "Čas").element_handle()
+        date_matches = _visible_matches(page.get_by_text("Datum", exact=True))
+        time_matches = _visible_matches(page.get_by_text("Čas", exact=True))
+        if not date_matches and not time_matches:
+            raise ReservationExtractionError("DETAIL_STRUCTURE_NOT_FOUND")
+        if len(date_matches) != 1 or len(time_matches) != 1:
+            raise ReservationExtractionError("DETAIL_STRUCTURE_NOT_UNIQUE")
+        date_element = date_matches[0].element_handle()
+        time_element = time_matches[0].element_handle()
         if date_element is None or time_element is None:
             raise ReservationExtractionError("DETAIL_STRUCTURE_NOT_UNIQUE")
         result_handle = date_element.evaluate_handle(

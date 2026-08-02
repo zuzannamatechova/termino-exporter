@@ -15,6 +15,7 @@ from termino_exporter.extraction import (
     DetailStructure,
     ReservationExtractionError,
     extract_reservation_data,
+    find_detail_content,
     find_detail_structure,
 )
 
@@ -27,6 +28,25 @@ def _visible_locator(handle: MagicMock) -> MagicMock:
     locator.count.return_value = 1
     locator.nth.return_value = candidate
     return locator
+
+
+def test_detail_content_distinguishes_absence_from_ambiguity() -> None:
+    page = MagicMock()
+    no_matches = MagicMock()
+    no_matches.count.return_value = 0
+    page.get_by_text.return_value = no_matches
+
+    with pytest.raises(ReservationExtractionError, match="^DETAIL_STRUCTURE_NOT_FOUND$"):
+        find_detail_content(page)
+
+    one_match = MagicMock()
+    one_match.is_visible.return_value = True
+    one_label = MagicMock()
+    one_label.count.return_value = 1
+    one_label.nth.return_value = one_match
+    page.get_by_text.side_effect = [one_label, no_matches]
+    with pytest.raises(ReservationExtractionError, match="^DETAIL_STRUCTURE_NOT_UNIQUE$"):
+        find_detail_content(page)
 
 
 def _structure_page() -> tuple[MagicMock, list[MagicMock]]:

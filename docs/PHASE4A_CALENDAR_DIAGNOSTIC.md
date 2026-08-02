@@ -51,6 +51,21 @@ počet denních větví, nesmí obsahovat `gridcell` a musí jako jediná obsaho
 malý neprázdný obsahový blok. Konkrétní počet buněk časové mřížky není konstanta. Nula nebo
 více platných vrstev skončí pevným bezpečným kódem; první shoda se nikdy nevybere.
 
+Jednosloupcový pohled Den může kolem stejného skutečného `gridcell` obsahovat několik
+vnořených obalů, které samostatně splní pravidlo grid anchoru. Browserový census je
+kanonizuje pouze tehdy, když vnější a vnitřní kandidát mají stejný počet větví a jejich
+uspořádané seznamy odkazují na přesně stejné živé DOM elementy `gridcell`. Context root se
+odvozuje výhradně od rodiče kanonického anchoru; zastíněné vnější obaly kontext neurčují a
+nepřidávají se do snapshotu jako duplicitní vrstvy. Žádná DOM identita se do Pythonu
+nepřenáší. Nezávislí kandidáti nebo vnoření kandidáti s jinými `gridcell` elementy se
+neslučují a nadále skončí jako nejednoznační; první ani obecně nejhlubší shoda se
+automaticky nevybírá.
+
+Přímé viditelné děti context rootu jsou paralelní logické vrstvy, nikoli kalendářní dny.
+Počet dnů určuje `branch_count` kanonické grid vrstvy. Event layer musí splnit všechny
+strukturální podmínky a v DOM pořadí vrstev následovat za grid vrstvou. Obsahová časová
+nebo pomocná vrstva před gridem se proto nevybere a první obsahová shoda nikdy nestačí.
+
 Přímé obsahové bloky paralelní vrstvy jsou označeny pouze neutrálně jako calendar event
 blocks. Mohou to být obyčejné nefocusable elementy `div`. Text se uvnitř browserového
 skriptu používá pouze jako boolean příznak neprázdného obsahu a nikdy se nevrací.

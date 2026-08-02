@@ -35,6 +35,7 @@ def _layer(
     events: tuple[int, ...] | None = None,
     navigation: bool = False,
     header: bool = False,
+    shadowed: bool = False,
 ) -> CalendarLayerSnapshot:
     zeros = (0,) * count
     return CalendarLayerSnapshot(
@@ -45,6 +46,7 @@ def _layer(
         event_block_counts=zeros if events is None else events,
         navigation_like=navigation,
         header_like=header,
+        shadowed_by_nested_equivalent_grid_anchor=shadowed,
     )
 
 
@@ -71,6 +73,32 @@ def _snapshot(
     )
 
 
+def _flattened_snapshot(
+    count: int = 1,
+    *,
+    event_counts: tuple[int, ...] | None = None,
+    trailing_layers: tuple[CalendarLayerSnapshot, ...] = (),
+) -> CalendarDomSnapshot:
+    counts = (1,) + (0,) * (count - 1) if event_counts is None else event_counts
+    time_layer = _layer(
+        count,
+        children=(24,) * count,
+        descendants=(24,) * count,
+        events=(23,) * count,
+    )
+    helper = _layer(count, children=(1,) * count, descendants=(1,) * count)
+    grid = _layer(count, gridcells=(1,) * count, children=(1,) * count, descendants=(1,) * count)
+    event = _layer(count, children=counts, descendants=counts, events=counts)
+    return CalendarDomSnapshot(
+        (
+            CalendarContextSnapshot(
+                (time_layer, helper, _layer(count), grid, event, *trailing_layers)
+            ),
+        ),
+        (_headers(count),),
+    )
+
+
 def _layer_payload(count: int, **overrides: object) -> dict[str, object]:
     payload: dict[str, object] = {
         "branch_count": count,
@@ -80,6 +108,7 @@ def _layer_payload(count: int, **overrides: object) -> dict[str, object]:
         "event_block_counts": [0] * count,
         "navigation_like": False,
         "header_like": False,
+        "shadowed_by_nested_equivalent_grid_anchor": False,
     }
     payload.update(overrides)
     return payload
@@ -178,11 +207,38 @@ def test_resolver_supports_bounded_column_counts(count: int) -> None:
     assert len(result.columns) == count
 
 
+@pytest.mark.parametrize("count", [1, 3, 7, 5])
+def test_flattened_views_ignore_content_layers_before_grid(count: int) -> None:
+    result = resolve_calendar_snapshot(_flattened_snapshot(count))
+
+    assert result.column_count == count
+    assert tuple(column.event_block_count for column in result.columns) == (
+        (1,) + (0,) * (count - 1)
+    )
+
+
 def test_resolver_rejects_direct_snapshot_outside_column_limit() -> None:
     invalid = CalendarDomSnapshot(
         (CalendarContextSnapshot((_layer(15, gridcells=(1,) * 15),)),),
         (),
     )
+    with pytest.raises(CalendarDiagnosisError, match="^CALENDAR_DIAG_INVALID_SNAPSHOT$"):
+        resolve_calendar_snapshot(invalid)
+
+
+def test_resolver_rejects_non_boolean_shadow_marker_in_direct_model() -> None:
+    invalid_layer = CalendarLayerSnapshot(
+        branch_count=1,
+        gridcell_counts=(1,),
+        direct_child_counts=(0,),
+        descendant_counts=(0,),
+        event_block_counts=(0,),
+        navigation_like=False,
+        header_like=False,
+        shadowed_by_nested_equivalent_grid_anchor=1,  # type: ignore[arg-type]
+    )
+    invalid = CalendarDomSnapshot((CalendarContextSnapshot((invalid_layer,)),), ())
+
     with pytest.raises(CalendarDiagnosisError, match="^CALENDAR_DIAG_INVALID_SNAPSHOT$"):
         resolve_calendar_snapshot(invalid)
 
@@ -195,6 +251,118 @@ def test_resolver_reports_two_grid_layers_as_ambiguous() -> None:
     )
     with pytest.raises(CalendarDiagnosisError, match="^GRIDCELL_LAYER_AMBIGUOUS$"):
         resolve_calendar_snapshot(snapshot)
+
+
+def test_one_column_with_one_canonical_grid_anchor_is_resolved() -> None:
+    result = resolve_calendar_snapshot(_snapshot(1, events=(1,)))
+
+    assert result.column_count == 1
+    assert tuple(column.event_block_count for column in result.columns) == (1,)
+
+
+def test_nested_equivalent_outer_grid_anchor_is_ignored() -> None:
+    outer = _layer(1, gridcells=(1,), shadowed=True)
+    canonical = _layer(1, gridcells=(1,))
+    event = _layer(1, events=(1,))
+    snapshot = CalendarDomSnapshot(
+        (CalendarContextSnapshot((outer, canonical, event)),),
+        (_headers(1),),
+    )
+
+    result = resolve_calendar_snapshot(snapshot)
+
+    assert result.column_count == 1
+    assert tuple(column.event_block_count for column in result.columns) == (1,)
+
+
+def test_three_nested_equivalent_grid_anchors_reduce_to_one() -> None:
+    outer = _layer(1, gridcells=(1,), shadowed=True)
+    middle = _layer(1, gridcells=(1,), shadowed=True)
+    canonical = _layer(1, gridcells=(1,))
+    event = _layer(1, events=(1,))
+    snapshot = CalendarDomSnapshot(
+        (CalendarContextSnapshot((outer, middle, canonical, event)),),
+        (),
+    )
+
+    result = resolve_calendar_snapshot(snapshot)
+
+    assert result.column_count == 1
+    assert result.mode == "CALENDAR_LAYERS_FOUND_HEADERS_UNRESOLVED"
+
+
+def test_five_nested_equivalent_grid_anchor_markers_reduce_to_one_identity() -> None:
+    shadowed = tuple(_layer(1, gridcells=(1,), shadowed=True) for _ in range(4))
+    canonical = _layer(1, gridcells=(1,))
+    event = _layer(1, events=(1,))
+    snapshot = CalendarDomSnapshot(
+        (CalendarContextSnapshot((*shadowed, canonical, event)),),
+        (),
+    )
+
+    result = resolve_calendar_snapshot(snapshot)
+
+    assert result.column_count == 1
+    assert tuple(column.event_block_count for column in result.columns) == (1,)
+
+
+def test_flattened_day_has_five_real_layers_without_anchor_duplicates() -> None:
+    snapshot = _flattened_snapshot()
+
+    result = resolve_calendar_snapshot(snapshot)
+
+    assert len(snapshot.contexts[0].layers) == 5
+    assert all(layer.branch_count == 1 for layer in snapshot.contexts[0].layers)
+    assert result.column_count == 1
+    assert tuple(column.event_block_count for column in result.columns) == (1,)
+
+
+def test_independent_one_column_grid_anchors_remain_ambiguous() -> None:
+    first = _layer(1, gridcells=(1,))
+    second = _layer(1, gridcells=(1,))
+    snapshot = CalendarDomSnapshot(
+        (CalendarContextSnapshot((first, second, _layer(1, events=(1,)))),),
+        (),
+    )
+
+    with pytest.raises(CalendarDiagnosisError, match="^GRIDCELL_LAYER_AMBIGUOUS$"):
+        resolve_calendar_snapshot(snapshot)
+
+
+def test_nested_candidate_with_different_gridcell_identity_remains_ambiguous() -> None:
+    differently_identified_outer = _layer(1, gridcells=(1,), shadowed=False)
+    differently_identified_inner = _layer(1, gridcells=(1,), shadowed=False)
+    snapshot = CalendarDomSnapshot(
+        (
+            CalendarContextSnapshot(
+                (
+                    differently_identified_outer,
+                    differently_identified_inner,
+                    _layer(1, events=(1,)),
+                )
+            ),
+        ),
+        (),
+    )
+
+    with pytest.raises(CalendarDiagnosisError, match="^GRIDCELL_LAYER_AMBIGUOUS$"):
+        resolve_calendar_snapshot(snapshot)
+
+
+def test_shadowed_first_grid_anchor_is_never_selected() -> None:
+    shadowed = _layer(1, gridcells=(1,), shadowed=True)
+    canonical = _layer(1, gridcells=(1,))
+    event = _layer(1, events=(1,))
+    snapshot = CalendarDomSnapshot(
+        (CalendarContextSnapshot((shadowed, canonical, event)),),
+        (),
+    )
+
+    result = resolve_calendar_snapshot(snapshot)
+
+    assert result.gridcell_layer_found is True
+    assert result.event_layer_found is True
+    assert tuple(column.event_block_count for column in result.columns) == (1,)
 
 
 def test_resolver_reports_missing_grid_layer() -> None:
@@ -214,6 +382,55 @@ def test_two_event_layers_are_ambiguous_and_first_is_not_selected() -> None:
     second_event = _layer(7, events=(0, 1, 0, 0, 0, 0, 0))
     with pytest.raises(CalendarDiagnosisError, match="^EVENT_LAYER_AMBIGUOUS$"):
         resolve_calendar_snapshot(_snapshot(extra_layers=(second_event,)))
+
+
+def test_two_event_layers_after_grid_are_ambiguous() -> None:
+    second_event = _layer(1, events=(1,))
+
+    with pytest.raises(CalendarDiagnosisError, match="^EVENT_LAYER_AMBIGUOUS$"):
+        resolve_calendar_snapshot(_flattened_snapshot(trailing_layers=(second_event,)))
+
+
+def test_content_layer_only_before_grid_is_not_an_event_layer() -> None:
+    time_layer = _layer(1, children=(24,), descendants=(24,), events=(23,))
+    grid = _layer(1, gridcells=(1,))
+    snapshot = CalendarDomSnapshot(
+        (CalendarContextSnapshot((time_layer, grid)),),
+        (),
+    )
+
+    with pytest.raises(CalendarDiagnosisError, match="^EVENT_LAYER_EMPTY_OR_NOT_FOUND$"):
+        resolve_calendar_snapshot(snapshot)
+
+
+def test_event_layer_with_different_branch_count_after_grid_is_rejected() -> None:
+    grid = _layer(1, gridcells=(1,))
+    different_width = _layer(3, events=(1, 0, 0))
+    snapshot = CalendarDomSnapshot(
+        (CalendarContextSnapshot((grid, different_width)),),
+        (),
+    )
+
+    with pytest.raises(CalendarDiagnosisError, match="^EVENT_LAYER_EMPTY_OR_NOT_FOUND$"):
+        resolve_calendar_snapshot(snapshot)
+
+
+def test_layer_order_is_scoped_to_each_snapshot() -> None:
+    time_layer = _layer(1, events=(23,))
+    grid = _layer(1, gridcells=(1,))
+    event = _layer(1, events=(1,))
+    valid = CalendarDomSnapshot(
+        (CalendarContextSnapshot((time_layer, grid, event)),),
+        (),
+    )
+    ambiguous = CalendarDomSnapshot(
+        (CalendarContextSnapshot((grid, time_layer, event)),),
+        (),
+    )
+
+    assert resolve_calendar_snapshot(valid).columns[0].event_block_count == 1
+    with pytest.raises(CalendarDiagnosisError, match="^EVENT_LAYER_AMBIGUOUS$"):
+        resolve_calendar_snapshot(ambiguous)
 
 
 def test_empty_period_has_no_event_layer() -> None:
@@ -286,6 +503,12 @@ def test_deserializer_rejects_invalid_header_values(header: dict[str, object]) -
         lambda payload: payload["contexts"][0]["layers"][0].update(branch_count=15),
         lambda payload: payload["contexts"][0]["layers"][0].update(gridcell_counts=[1, -1, 1]),
         lambda payload: payload["contexts"][0]["layers"][0].update(event_block_counts=[1]),
+        lambda payload: payload["contexts"][0]["layers"][0].update(
+            shadowed_by_nested_equivalent_grid_anchor=1
+        ),
+        lambda payload: payload["contexts"][0]["layers"][0].pop(
+            "shadowed_by_nested_equivalent_grid_anchor"
+        ),
     ],
 )
 def test_deserializer_rejects_invalid_snapshot_without_repr(
@@ -397,6 +620,70 @@ def test_public_orchestration_processes_realistic_five_layer_census() -> None:
     assert manager.exited is True
 
 
+def test_public_orchestration_processes_flattened_one_column_day_view() -> None:
+    payload = {
+        "contexts": [
+            {
+                "layers": [
+                    _layer_payload(
+                        1,
+                        direct_child_counts=[24],
+                        descendant_counts=[24],
+                        event_block_counts=[23],
+                    ),
+                    _layer_payload(1, direct_child_counts=[1], descendant_counts=[1]),
+                    _layer_payload(1, direct_child_counts=[48], descendant_counts=[48]),
+                    _layer_payload(
+                        1,
+                        gridcell_counts=[1],
+                        direct_child_counts=[1],
+                        descendant_counts=[1],
+                    ),
+                    _layer_payload(
+                        1,
+                        direct_child_counts=[1],
+                        descendant_counts=[1],
+                        event_block_counts=[1],
+                    ),
+                ]
+            }
+        ],
+        "header_groups": [
+            {
+                "headers": [{"weekday_index": 0, "day_number": 27, "header_parseable": True}],
+                "headers_distinct": True,
+            }
+        ],
+    }
+    page = MagicMock()
+    page.evaluate.return_value = payload
+    manager = _Manager(page)
+    write = MagicMock()
+
+    result = diagnose_calendar(
+        url="https://example.invalid/calendar",
+        profile_dir=Path("test-profile"),
+        timeout_seconds=10,
+        wait_for_enter=lambda _prompt: "",
+        write=write,
+        context_factory=lambda _profile, _timeout: manager,
+    )
+    output = format_calendar_diagnosis(result)
+
+    assert result.mode == "CALENDAR_LAYERS_FOUND"
+    assert result.column_count == 1
+    assert tuple(column.event_block_count for column in result.columns) == (1,)
+    assert "Typ pohledu: Den" in output
+    assert "Sloupců: 1" in output
+    assert "Gridcell vrstva nalezena: ano" in output
+    assert "Vrstva událostí nalezena: ano" in output
+    assert "Bloků událostí: 1" in output
+    assert "Kliknutí provedena: 0" in output
+    page.evaluate.assert_called_once_with(CALENDAR_DIAGNOSIS_SCRIPT)
+    page.click.assert_not_called()
+    assert manager.exited is True
+
+
 def test_playwright_error_is_sanitized() -> None:
     page = MagicMock()
     page.evaluate.side_effect = Error("TEST UDÁLOST v DOM")
@@ -427,10 +714,59 @@ def test_static_census_source_has_only_safe_bounded_techniques() -> None:
     assert "MAX_ELEMENTS = 5000" in CALENDAR_DIAGNOSIS_SCRIPT
     assert "MAX_CONTEXTS = 20" in CALENDAR_DIAGNOSIS_SCRIPT
     assert "MAX_LAYERS = 20" in CALENDAR_DIAGNOSIS_SCRIPT
+    assert "MAX_GRID_ANCHORS = MAX_CONTEXTS * MAX_LAYERS" in CALENDAR_DIAGNOSIS_SCRIPT
     assert "MAX_COLUMNS = 14" in CALENDAR_DIAGNOSIS_SCRIPT
     assert "MAX_COMMON_ANCESTORS = 4" in CALENDAR_DIAGNOSIS_SCRIPT
     assert "MAX_EVENT_DESCENDANTS = 30" in CALENDAR_DIAGNOSIS_SCRIPT
     assert "element.children.length > 10" in CALENDAR_DIAGNOSIS_SCRIPT
+
+
+def test_static_grid_anchor_canonicalization_uses_only_live_dom_identity() -> None:
+    source = CALENDAR_DIAGNOSIS_SCRIPT
+
+    assert "outer.element.contains(inner.element)" in source
+    assert "matches[0] === inner.gridcells[index][0]" in source
+    assert "shadowedGridAnchors = new Map" in source
+    assert "shadowed_by_nested_equivalent_grid_anchor: Boolean(" in source
+    for forbidden in (
+        "querySelector",
+        "className",
+        "getElementById",
+        'getAttribute("id")',
+        'getAttribute("class")',
+        'getAttribute("style")',
+        "getBoundingClientRect",
+        "outerHTML",
+        "innerHTML",
+    ):
+        assert forbidden not in source
+
+
+def test_static_census_uses_canonical_parent_without_duplicate_anchor_layers() -> None:
+    source = CALENDAR_DIAGNOSIS_SCRIPT
+
+    assert "const root = canonical.element.parentElement" in source
+    assert "outermost" not in source
+    assert "grid_anchor_elements" not in source
+    assert "candidates.push(anchorElement)" not in source
+    assert "item.index > gridIndexes[0].index" in source
+
+
+def test_serialized_layer_contract_does_not_expose_gridcell_elements() -> None:
+    payload = _layer_payload(1, gridcell_counts=[1])
+
+    assert "gridcells" not in payload
+    assert "element" not in payload
+    assert set(payload) == {
+        "branch_count",
+        "gridcell_counts",
+        "direct_child_counts",
+        "descendant_counts",
+        "event_block_counts",
+        "navigation_like",
+        "header_like",
+        "shadowed_by_nested_equivalent_grid_anchor",
+    }
 
 
 def test_static_census_keeps_private_text_inside_javascript() -> None:

@@ -1,6 +1,7 @@
 """Command-line interface for Termino Exporter."""
 
 import argparse
+import math
 import sys
 from collections.abc import Sequence
 from importlib.metadata import version
@@ -19,6 +20,7 @@ from termino_exporter.calendar_diagnosis import CalendarDiagnosisError, diagnose
 from termino_exporter.close_diagnosis import CloseDiagnosisError
 from termino_exporter.diagnosis import DiagnosisError
 from termino_exporter.inspection import InspectionError, inspect_one_reservation
+from termino_exporter.single_event import SingleEventError, inspect_single_event
 
 DEFAULT_URL = "https://local.termino.eu/"
 DEFAULT_TIMEOUT_SECONDS = 30.0
@@ -40,7 +42,7 @@ class CzechArgumentParser(argparse.ArgumentParser):
 
 def _positive_seconds(value: str) -> float:
     seconds = float(value)
-    if seconds <= 0:
+    if not math.isfinite(seconds) or seconds <= 0:
         raise argparse.ArgumentTypeError("časový limit musí být větší než nula")
     return seconds
 
@@ -152,6 +154,38 @@ def create_parser() -> CzechArgumentParser:
         default=DEFAULT_TIMEOUT_SECONDS,
         help=f"časový limit operací v sekundách (výchozí: {DEFAULT_TIMEOUT_SECONDS:g})",
     )
+    single_event_parser = subparsers.add_parser(
+        "inspect-single-event",
+        help="bezpečně otevře a zpracuje jedinou testovací událost v pohledu Den",
+        description=(
+            "Spustí viditelný prohlížeč a pouze v ručně zvoleném pohledu Den bezpečně "
+            "otevře právě jednu strukturálně ověřenou testovací událost."
+        ),
+        add_help=False,
+    )
+    single_event_parser._positionals.title = "poziční argumenty"
+    single_event_parser._optionals.title = "volby"
+    single_event_parser.add_argument(
+        "-h", "--help", action="help", help="zobrazí tuto nápovědu a skončí"
+    )
+    single_event_parser.add_argument(
+        "--url",
+        type=_web_url,
+        default=DEFAULT_URL,
+        help=f"adresa kalendáře (výchozí: {DEFAULT_URL})",
+    )
+    single_event_parser.add_argument(
+        "--profile-dir",
+        type=Path,
+        default=None,
+        help="cesta k vyhrazenému lokálnímu profilu prohlížeče",
+    )
+    single_event_parser.add_argument(
+        "--timeout-seconds",
+        type=_positive_seconds,
+        default=DEFAULT_TIMEOUT_SECONDS,
+        help=f"časový limit operací v sekundách (výchozí: {DEFAULT_TIMEOUT_SECONDS:g})",
+    )
     return parser
 
 
@@ -196,6 +230,31 @@ def _run_diagnose_calendar(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_inspect_single_event(args: argparse.Namespace) -> int:
+    try:
+        requested_profile = (
+            args.profile_dir if args.profile_dir is not None else default_profile_dir()
+        )
+        inspect_single_event(
+            url=args.url,
+            profile_dir=safe_profile_dir(requested_profile),
+            timeout_seconds=args.timeout_seconds,
+        )
+    except SingleEventError as error:
+        print(f"Chyba: {error}", file=sys.stderr)
+        return 1
+    except BrowserError:
+        print("Chyba: BROWSER_ERROR", file=sys.stderr)
+        return 1
+    except ProfilePathError:
+        print("Chyba: UNSAFE_PROFILE_DIR", file=sys.stderr)
+        return 1
+    except InspectionError:
+        print("Chyba: EVENT_DETAIL_PROCESSING_FAILED", file=sys.stderr)
+        return 1
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the command-line interface."""
     for stream in (sys.stdout, sys.stderr):
@@ -207,5 +266,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _run_inspect_one(args)
     if args.command == "diagnose-calendar":
         return _run_diagnose_calendar(args)
+    if args.command == "inspect-single-event":
+        return _run_inspect_single_event(args)
     parser.print_help()
     return 0
