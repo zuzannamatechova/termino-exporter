@@ -30,6 +30,9 @@ where = ["src"]
 [tool.pytest.ini_options]
 addopts = "-ra"
 testpaths = ["tests"]
+markers = [
+  "browser: synthetic headless Playwright DOM integration tests without network access",
+]
 
 [tool.ruff]
 line-length = 100
@@ -42,4 +45,3 @@ select = ["E", "F", "I", "UP", "B"]
 python_version = "3.12"
 strict = true
 files = ["src"]
-

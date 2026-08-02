@@ -46,7 +46,9 @@ CALENDAR_DIAGNOSIS_SCRIPT = r"""
     let current = element;
     for (let depth = 0; current && depth <= MAX_DEPTH; depth += 1) {
       const presentation = window.getComputedStyle(current);
-      if (presentation.display === "none" || presentation.visibility === "hidden") return false;
+      if (presentation.display === "none" ||
+          presentation.visibility === "hidden" ||
+          presentation.visibility === "collapse") return false;
       if (current === document.body) return true;
       current = current.parentElement;
     }
@@ -80,6 +82,16 @@ CALENDAR_DIAGNOSIS_SCRIPT = r"""
     sameNumberArray(layer.direct_child_counts, fingerprint.direct_child_counts) &&
     sameNumberArray(layer.descendant_counts, fingerprint.descendant_counts) &&
     sameNumberArray(layer.event_block_counts, fingerprint.event_block_counts) &&
+    layer.navigation_like === fingerprint.navigation_like &&
+    layer.header_like === fingerprint.header_like &&
+    layer.shadowed_by_nested_equivalent_grid_anchor ===
+      fingerprint.shadowed_by_nested_equivalent_grid_anchor;
+  const matchesLayerShape = (layer, fingerprint) =>
+    fingerprint !== null && typeof fingerprint === "object" &&
+    layer.branch_count === fingerprint.branch_count &&
+    sameNumberArray(layer.gridcell_counts, fingerprint.gridcell_counts) &&
+    sameNumberArray(layer.direct_child_counts, fingerprint.direct_child_counts) &&
+    sameNumberArray(layer.descendant_counts, fingerprint.descendant_counts) &&
     layer.navigation_like === fingerprint.navigation_like &&
     layer.header_like === fingerprint.header_like &&
     layer.shadowed_by_nested_equivalent_grid_anchor ===
@@ -158,10 +170,27 @@ CALENDAR_DIAGNOSIS_SCRIPT = r"""
 
   const contextDefinitions = [];
   for (const canonical of canonicalGridAnchors) {
-    const root = canonical.element.parentElement;
+    let root = canonical.element.parentElement;
     if (!root) continue;
-    if (!contextDefinitions.some((candidate) => candidate.root === root)) {
-      contextDefinitions.push({root});
+    let current = root;
+    for (let depth = 0; current && depth <= MAX_COMMON_ANCESTORS; depth += 1) {
+      const siblings = directVisibleChildren(current);
+      const gridIndexes = siblings.map((element, index) => ({element, index})).filter((item) =>
+        item.element === canonical.element || item.element.contains(canonical.element)
+      );
+      if (gridIndexes.length === 1 && siblings.slice(gridIndexes[0].index + 1).some(
+        (element) => directVisibleChildren(element).length === canonical.branches.length
+      )) {
+        root = current;
+        break;
+      }
+      current = current.parentElement;
+    }
+    const existing = contextDefinitions.find((candidate) => candidate.root === root);
+    if (existing) {
+      existing.canonicals.push(canonical);
+    } else {
+      contextDefinitions.push({root, canonicals: [canonical]});
     }
   }
   if (contextDefinitions.length > MAX_CONTEXTS) return fail("CALENDAR_DIAG_LIMIT_EXCEEDED");
@@ -170,9 +199,15 @@ CALENDAR_DIAGNOSIS_SCRIPT = r"""
   const contextElements = [];
   for (const definition of contextDefinitions) {
     const root = definition.root;
-    const candidates = directVisibleChildren(root).filter((element) => {
+    const rootCandidates = directVisibleChildren(root).filter((element) => {
       const count = directVisibleChildren(element).length;
       return count >= 1 && count <= MAX_COLUMNS;
+    });
+    const candidates = rootCandidates.flatMap((element) => {
+      const contained = definition.canonicals.filter(
+        (canonical) => element === canonical.element || element.contains(canonical.element)
+      );
+      return contained.length === 1 ? [contained[0].element] : [element];
     });
     if (candidates.length > MAX_LAYERS) return fail("CALENDAR_DIAG_LIMIT_EXCEEDED");
     const layers = [];
@@ -245,24 +280,22 @@ CALENDAR_DIAGNOSIS_SCRIPT = r"""
       item.layer.branch_count === gridIndexes[0].layer.branch_count &&
       item.layer.gridcell_counts.every((count) => count === 0) &&
       !item.layer.navigation_like && !item.layer.header_like &&
-      item.layer.event_block_counts.reduce((total, count) => total + count, 0) > 0
+      matchesLayerShape(item.layer, selection.event_layer)
     );
     if (eventIndexes.length !== 1) return fail("CALENDAR_STRUCTURE_CHANGED");
     const layerIndex = eventIndexes[0].index;
     const layer = contexts[contextIndex].layers[layerIndex];
-    if (layer.branch_count !== 1 || layer.event_block_counts.length !== 1 ||
-        layer.event_block_counts[0] !== 1) {
-      return fail("CALENDAR_STRUCTURE_CHANGED");
-    }
-    if (!matchesLayerFingerprint(layer, selection.event_layer)) {
-      return fail("CALENDAR_STRUCTURE_CHANGED");
-    }
     const liveLayer = contextElements[contextIndex][layerIndex];
     const branches = directVisibleChildren(liveLayer);
     if (branches.length !== 1) return fail("CALENDAR_STRUCTURE_CHANGED");
     const blocks = blocksForBranch(branches[0]);
     if (!blocks.length) return fail("SINGLE_EVENT_HANDLE_NOT_FOUND");
     if (blocks.length !== 1) return fail("SINGLE_EVENT_HANDLE_AMBIGUOUS");
+    if (layer.branch_count !== 1 || layer.event_block_counts.length !== 1 ||
+        layer.event_block_counts[0] !== 1 ||
+        !matchesLayerFingerprint(layer, selection.event_layer)) {
+      return fail("CALENDAR_STRUCTURE_CHANGED");
+    }
     const block = blocks[0];
     if (!block.isConnected || !visible(block)) return fail("SINGLE_EVENT_HANDLE_NOT_FOUND");
     return {status: "ok", element: block};

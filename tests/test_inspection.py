@@ -162,6 +162,8 @@ def test_safe_close_control_uses_shared_detail_structure(
 
     assert find_safe_close_control(page, content) is candidate
     resolver.assert_called_once_with(page, content)
+    structure.release_handle.assert_called_once_with(candidate)
+    structure.dispose.assert_called_once_with()
     candidate.click.assert_not_called()
 
 
@@ -409,4 +411,5 @@ def test_close_diagnostic_mode_uses_found_content_without_inspection(
     find_content.assert_called_once_with(page)
     diagnose_close.assert_called_once()
     inspect_detail.assert_not_called()
+    content.dispose.assert_called_once_with()
     assert manager.exited is True

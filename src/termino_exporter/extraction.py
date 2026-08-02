@@ -1,15 +1,16 @@
 """Safe structural extraction from one already opened Termino detail."""
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 
-from playwright.sync_api import ElementHandle, Error, Locator, Page
+from playwright.sync_api import ElementHandle, Error, JSHandle, Locator, Page
 
 from termino_exporter.close_diagnosis import (
     FORBIDDEN_ACTION_NAMES,
     named_visible_button_handles,
 )
+from termino_exporter.handles import dispose_handles, safe_dispose_handle
 
 MAX_CONTENT_ANCESTOR_DEPTH = 10
 MAX_STRUCTURE_ANCESTOR_DEPTH = 4
@@ -230,12 +231,40 @@ EXTRACT_FIELDS_SCRIPT = r"""
 
 @dataclass(frozen=True, slots=True)
 class DetailStructure:
+    """Verified detail handles plus the wrappers owned by this structure."""
+
     root: ElementHandle
     header_branch: ElementHandle
     content_branch: ElementHandle
     scroll_container: ElementHandle
     action_branch: ElementHandle
     close_control: ElementHandle
+    _owned_handles: tuple[ElementHandle, ...] = field(default=(), repr=False, compare=False)
+    _disposed: bool = field(default=False, init=False, repr=False, compare=False)
+
+    def claim_handle(self, handle: ElementHandle) -> None:
+        """Add a newly created wrapper to this structure's ownership."""
+        if self._disposed:
+            raise RuntimeError("Nelze převzít handle do uvolněné struktury.")
+        if all(existing is not handle for existing in self._owned_handles):
+            object.__setattr__(self, "_owned_handles", (*self._owned_handles, handle))
+
+    def release_handle(self, handle: ElementHandle) -> None:
+        """Transfer one owned wrapper from this structure to its caller."""
+        if self._disposed:
+            raise RuntimeError("Nelze převést handle z uvolněné struktury.")
+        object.__setattr__(
+            self,
+            "_owned_handles",
+            tuple(existing for existing in self._owned_handles if existing is not handle),
+        )
+
+    def dispose(self) -> None:
+        """Idempotently release every wrapper owned by the structure."""
+        if self._disposed:
+            return
+        object.__setattr__(self, "_disposed", True)
+        dispose_handles(self._owned_handles)
 
 
 @dataclass(frozen=True, slots=True)
@@ -264,6 +293,10 @@ def _visible_matches(locator: Locator) -> list[Locator]:
 
 def find_detail_content(page: Page) -> ElementHandle:
     """Find the bounded genuinely scrollable content containing Datum and Čas."""
+    date_element: ElementHandle | None = None
+    time_element: ElementHandle | None = None
+    result_handle: JSHandle | None = None
+    content: ElementHandle | None = None
     try:
         date_matches = _visible_matches(page.get_by_text("Datum", exact=True))
         time_matches = _visible_matches(page.get_by_text("Čas", exact=True))
@@ -281,20 +314,27 @@ def find_detail_content(page: Page) -> ElementHandle:
         )
         content = result_handle.as_element()
         if content is None:
-            result_handle.dispose()
             raise ReservationExtractionError("DETAIL_STRUCTURE_NOT_UNIQUE")
         return content
     except Error as error:
         raise ReservationExtractionError("DETAIL_STRUCTURE_NOT_UNIQUE") from error
+    finally:
+        dispose_handles(
+            (date_element, time_element, result_handle),
+            exclude=() if content is None else (content,),
+        )
 
 
 def _branch_containing(root: ElementHandle, target: ElementHandle) -> ElementHandle:
     handle = root.evaluate_handle(BRANCH_CONTAINING_SCRIPT, target)
-    branch = handle.as_element()
-    if branch is None:
-        handle.dispose()
-        raise ReservationExtractionError("DETAIL_STRUCTURE_NOT_UNIQUE")
-    return branch
+    try:
+        branch = handle.as_element()
+        if branch is None:
+            raise ReservationExtractionError("DETAIL_STRUCTURE_NOT_UNIQUE")
+        return branch
+    finally:
+        if "branch" not in locals() or branch is not handle:
+            safe_dispose_handle(handle)
 
 
 def _matches_close_control(raw: object) -> bool:
@@ -310,18 +350,23 @@ def find_detail_structure(
     page: Page,
     content: ElementHandle | None = None,
 ) -> DetailStructure:
-    """Find exactly one bounded HEADER-CONTENT-ACTION detail structure."""
+    """Return an owning structure while retaining ownership of caller-supplied content."""
+    resolved_content: ElementHandle | None = None
+    owns_content = content is None
+    forbidden_actions: list[ElementHandle] = []
+    ancestor_handles: list[ElementHandle] = []
+    structures: list[DetailStructure] = []
+    selected: DetailStructure | None = None
     try:
         resolved_content = content if content is not None else find_detail_content(page)
-        forbidden_actions: list[ElementHandle] = []
         for name in FORBIDDEN_ACTION_NAMES:
             matches = named_visible_button_handles(page, (name,))
             if len(matches) != 1:
+                dispose_handles(matches)
                 raise ReservationExtractionError("DETAIL_STRUCTURE_NOT_UNIQUE")
             forbidden_actions.append(matches[0])
 
         current: ElementHandle | None = resolved_content
-        structures: list[DetailStructure] = []
         saw_valid_root = False
         for depth in range(MAX_STRUCTURE_ANCESTOR_DEPTH + 1):
             if current is None:
@@ -331,40 +376,70 @@ def find_detail_structure(
                 {"content": resolved_content, "forbiddenActions": forbidden_actions},
             ):
                 saw_valid_root = True
-                content_branch = _branch_containing(current, resolved_content)
-                action_branch = _branch_containing(current, forbidden_actions[0])
+                content_branch: ElementHandle | None = None
+                action_branch: ElementHandle | None = None
                 header_candidates: list[ElementHandle] = []
-                for button in current.query_selector_all("button"):
-                    if not button.is_visible():
-                        continue
-                    signature = button.evaluate(
-                        CLOSE_CONTROL_SIGNATURE_SCRIPT,
-                        {
-                            "root": current,
-                            "content": resolved_content,
-                            "forbiddenActions": forbidden_actions,
-                        },
-                    )
-                    if not _matches_close_control(signature):
-                        continue
-                    header_candidates.append(button)
-                if len(header_candidates) == 1:
-                    close_control = header_candidates[0]
-                    structures.append(
-                        DetailStructure(
-                            root=current,
-                            header_branch=_branch_containing(current, close_control),
-                            content_branch=content_branch,
-                            scroll_container=resolved_content,
-                            action_branch=action_branch,
-                            close_control=close_control,
+                buttons: list[ElementHandle] = []
+                header_branch: ElementHandle | None = None
+                structure_created = False
+                try:
+                    content_branch = _branch_containing(current, resolved_content)
+                    action_branch = _branch_containing(current, forbidden_actions[0])
+                    buttons = current.query_selector_all("button")
+                    for button in buttons:
+                        if not button.is_visible():
+                            continue
+                        signature = button.evaluate(
+                            CLOSE_CONTROL_SIGNATURE_SCRIPT,
+                            {
+                                "root": current,
+                                "content": resolved_content,
+                                "forbiddenActions": forbidden_actions,
+                            },
                         )
-                    )
-                elif len(header_candidates) > 1:
-                    raise ReservationExtractionError("CLOSE_CONTROL_NOT_UNIQUE")
+                        if _matches_close_control(signature):
+                            header_candidates.append(button)
+                    if len(header_candidates) == 1:
+                        close_control = header_candidates[0]
+                        header_branch = _branch_containing(current, close_control)
+                        owned = [
+                            content_branch,
+                            action_branch,
+                            header_branch,
+                            close_control,
+                        ]
+                        if current is not resolved_content:
+                            owned.append(current)
+                        structures.append(
+                            DetailStructure(
+                                root=current,
+                                header_branch=header_branch,
+                                content_branch=content_branch,
+                                scroll_container=resolved_content,
+                                action_branch=action_branch,
+                                close_control=close_control,
+                                _owned_handles=tuple(owned),
+                            )
+                        )
+                        structure_created = True
+                    elif len(header_candidates) > 1:
+                        raise ReservationExtractionError("CLOSE_CONTROL_NOT_UNIQUE")
+                finally:
+                    retained = tuple(header_candidates) if structure_created else ()
+                    dispose_handles(buttons, exclude=retained)
+                    if not structure_created:
+                        dispose_handles((content_branch, action_branch, header_branch))
             if depth < MAX_STRUCTURE_ANCESTOR_DEPTH:
                 parent_handle = current.evaluate_handle(PARENT_ELEMENT_SCRIPT)
-                current = parent_handle.as_element()
+                parent = parent_handle.as_element()
+                if parent is None:
+                    safe_dispose_handle(parent_handle)
+                    current = None
+                else:
+                    if parent is not parent_handle:
+                        safe_dispose_handle(parent_handle)
+                    ancestor_handles.append(parent)
+                    current = parent
 
         if len(structures) != 1:
             code = (
@@ -373,11 +448,30 @@ def find_detail_structure(
                 else "DETAIL_STRUCTURE_NOT_UNIQUE"
             )
             raise ReservationExtractionError(code)
-        return structures[0]
+        selected = structures[0]
+        if owns_content:
+            selected.claim_handle(resolved_content)
+        return selected
     except ReservationExtractionError:
         raise
     except Error as error:
         raise ReservationExtractionError("DETAIL_STRUCTURE_NOT_UNIQUE") from error
+    finally:
+        dispose_handles(forbidden_actions)
+        structure_owned_handles = tuple(
+            handle
+            for structure in structures
+            if structure is not selected
+            for handle in structure._owned_handles
+        )
+        for structure in structures:
+            if structure is not selected:
+                structure.dispose()
+        if selected is None:
+            if owns_content:
+                safe_dispose_handle(resolved_content)
+        retained = () if selected is None else selected._owned_handles
+        dispose_handles(ancestor_handles, exclude=(*retained, *structure_owned_handles))
 
 
 def _extract_client_name(structure: DetailStructure) -> str | None:

@@ -745,7 +745,9 @@ def test_static_grid_anchor_canonicalization_uses_only_live_dom_identity() -> No
 def test_static_census_uses_canonical_parent_without_duplicate_anchor_layers() -> None:
     source = CALENDAR_DIAGNOSIS_SCRIPT
 
-    assert "const root = canonical.element.parentElement" in source
+    assert "let root = canonical.element.parentElement" in source
+    assert "depth <= MAX_COMMON_ANCESTORS" in source
+    assert "contained.length === 1 ? [contained[0].element]" in source
     assert "outermost" not in source
     assert "grid_anchor_elements" not in source
     assert "candidates.push(anchorElement)" not in source

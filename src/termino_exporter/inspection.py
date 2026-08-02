@@ -10,6 +10,7 @@ from playwright.sync_api import (
     BrowserContext,
     ElementHandle,
     Error,
+    JSHandle,
     Locator,
     Page,
 )
@@ -31,6 +32,7 @@ from termino_exporter.extraction import (
 )
 from termino_exporter.extraction import (
     MAX_STRUCTURE_ANCESTOR_DEPTH,
+    DetailStructure,
     ReservationExtractionError,
     extract_reservation_data,
     find_detail_structure,
@@ -38,6 +40,7 @@ from termino_exporter.extraction import (
 from termino_exporter.extraction import (
     find_detail_content as extract_detail_content,
 )
+from termino_exporter.handles import dispose_handles, safe_dispose_handle
 from termino_exporter.models import Reservation
 from termino_exporter.parsing import ReservationParseError, parse_reservation_fields
 
@@ -98,15 +101,21 @@ def _visible_named_buttons_inside(
     name: str,
 ) -> list[ElementHandle]:
     """Return fresh visible named buttons that are descendants of content."""
-    named_buttons = named_visible_button_handles(page, (name,))
+    named_buttons: list[ElementHandle] = []
+    buttons: list[ElementHandle] = []
     matches: list[ElementHandle] = []
-    for button in content.query_selector_all("button"):
-        if button.is_visible() and button.evaluate(
-            MATCHES_NAMED_BUTTON_SCRIPT,
-            named_buttons,
-        ):
-            matches.append(button)
-    return matches
+    try:
+        named_buttons = named_visible_button_handles(page, (name,))
+        buttons = content.query_selector_all("button")
+        for button in buttons:
+            if button.is_visible() and button.evaluate(
+                MATCHES_NAMED_BUTTON_SCRIPT,
+                named_buttons,
+            ):
+                matches.append(button)
+        return matches
+    finally:
+        dispose_handles((*named_buttons, *buttons), exclude=matches)
 
 
 def _handle_is_in_fresh_matches(
@@ -137,39 +146,62 @@ def expand_all_more_buttons(
 ) -> None:
     """Expand every current More button once, with bounded verified progress."""
     successful_expansions = 0
+    disposed_wrappers: list[JSHandle] = []
     while True:
         more_buttons = find_buttons(page, content, "Více")
         if not more_buttons:
             return
         if successful_expansions >= MAX_SUCCESSFUL_EXPANSIONS:
+            dispose_handles(more_buttons, disposed_wrappers=disposed_wrappers)
             raise ExpansionError("Detail obsahuje příliš mnoho prvků k rozbalení.")
 
         before_more_count = len(more_buttons)
-        before_less_count = len(find_buttons(page, content, "Méně"))
         candidate = more_buttons.pop()
-        before_text_length = len(content.inner_text())
-        candidate.click(timeout=click_timeout_ms)
-        deadline = monotonic() + progress_timeout_ms / 1_000
+        dispose_handles(more_buttons, disposed_wrappers=disposed_wrappers)
+        try:
+            less_buttons = find_buttons(page, content, "Méně")
+            try:
+                before_less_count = len(less_buttons)
+            finally:
+                dispose_handles(
+                    less_buttons,
+                    exclude=(candidate,),
+                    disposed_wrappers=disposed_wrappers,
+                )
+            before_text_length = len(content.inner_text())
+            candidate.click(timeout=click_timeout_ms)
+            deadline = monotonic() + progress_timeout_ms / 1_000
 
-        while True:
-            refreshed_more_buttons = find_buttons(page, content, "Více")
-            refreshed_less_buttons = find_buttons(page, content, "Méně")
-            after_text_length = len(content.inner_text())
-            candidate_changed_to_less = _handle_is_in_fresh_matches(
-                candidate,
-                refreshed_less_buttons,
-            )
-            if (
-                len(refreshed_more_buttons) < before_more_count
-                or len(refreshed_less_buttons) > before_less_count
-                or after_text_length > before_text_length
-                or candidate_changed_to_less
-            ):
-                successful_expansions += 1
-                break
-            if monotonic() >= deadline:
-                raise ExpansionError("Rozbalení obsahu detailu se nepodařilo potvrdit.")
-            sleep(EXPAND_POLL_INTERVAL_SECONDS)
+            while True:
+                refreshed_more_buttons: list[ElementHandle] = []
+                refreshed_less_buttons: list[ElementHandle] = []
+                try:
+                    refreshed_more_buttons = find_buttons(page, content, "Více")
+                    refreshed_less_buttons = find_buttons(page, content, "Méně")
+                    after_text_length = len(content.inner_text())
+                    candidate_changed_to_less = _handle_is_in_fresh_matches(
+                        candidate,
+                        refreshed_less_buttons,
+                    )
+                    if (
+                        len(refreshed_more_buttons) < before_more_count
+                        or len(refreshed_less_buttons) > before_less_count
+                        or after_text_length > before_text_length
+                        or candidate_changed_to_less
+                    ):
+                        successful_expansions += 1
+                        break
+                    if monotonic() >= deadline:
+                        raise ExpansionError("Rozbalení obsahu detailu se nepodařilo potvrdit.")
+                    sleep(EXPAND_POLL_INTERVAL_SECONDS)
+                finally:
+                    dispose_handles(
+                        (*refreshed_more_buttons, *refreshed_less_buttons),
+                        exclude=(candidate,),
+                        disposed_wrappers=disposed_wrappers,
+                    )
+        finally:
+            dispose_handles((candidate,), disposed_wrappers=disposed_wrappers)
 
 
 def find_detail_content(page: Page) -> ElementHandle:
@@ -187,10 +219,17 @@ def find_safe_close_control(
     content: ElementHandle,
 ) -> ElementHandle:
     """Find one structurally safe close button in the nearest bounded root."""
+    structure: DetailStructure | None = None
     try:
-        return find_detail_structure(page, content).close_control
+        structure = find_detail_structure(page, content)
+        close_control = structure.close_control
+        structure.release_handle(close_control)
+        return close_control
     except ReservationExtractionError as error:
         raise CloseControlError("Detail nemá jednoznačně rozpoznaný zavírací prvek.") from error
+    finally:
+        if structure is not None:
+            structure.dispose()
 
 
 def confirm_detail_closed(
@@ -252,6 +291,8 @@ def inspect_open_detail(
     expand_detail: ExpandDetail = expand_all_more_buttons,
 ) -> Reservation:
     """Extract, parse, print, and safely close one manually opened detail."""
+    initial_structure: DetailStructure | None = None
+    fresh_structure: DetailStructure | None = None
     try:
         initial_structure = find_detail_structure(page)
         expand_detail(page, initial_structure.scroll_container)
@@ -273,6 +314,11 @@ def inspect_open_detail(
         ) from error
     except Error as error:
         raise InspectionError("Operace s otevřeným detailem se nezdařila.") from error
+    finally:
+        if fresh_structure is not None:
+            fresh_structure.dispose()
+        if initial_structure is not None:
+            initial_structure.dispose()
 
 
 def inspect_one_reservation(
@@ -302,6 +348,9 @@ def inspect_one_reservation(
             diagnose_dialog_structure(page, write)
         elif diagnose_close:
             content = find_detail_content(page)
-            diagnose_close_buttons(page, content, write)
+            try:
+                diagnose_close_buttons(page, content, write)
+            finally:
+                safe_dispose_handle(content)
         else:
             inspect_open_detail(page, write)

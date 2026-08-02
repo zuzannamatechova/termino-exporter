@@ -4,7 +4,7 @@ Tento postup ověřuje bezpečné vypsání textu jednoho ručně
 otevřeného detailu rezervace. Nepoužívejte při dokumentování testu skutečná klientská
 data.
 
-Pro lokální ruční test použijte pouze dummy rezervaci `Jana Nováková`.
+Pro lokální ruční test použijte pouze dummy rezervaci `TEST OSOBA`.
 
 ## Předpoklady
 

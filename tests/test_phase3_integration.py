@@ -82,8 +82,16 @@ def test_full_phase3_flow_uses_fresh_structure_and_returns_parser_result(
     parser = MagicMock(side_effect=lambda *_args, **_kwargs: events.append("parse") or reservation)
     write = MagicMock(side_effect=lambda _text: events.append("write"))
     flush = MagicMock(side_effect=lambda: events.append("flush"))
-    fresh.close_control.click.side_effect = lambda: events.append("close")
-    confirm = MagicMock(side_effect=lambda *_args: events.append("confirm"))
+    fresh.close_control.click.side_effect = lambda: (
+        fresh.dispose.assert_not_called(),
+        events.append("close"),
+    )[-1]
+    confirm = MagicMock(
+        side_effect=lambda *_args: (
+            fresh.dispose.assert_not_called(),
+            events.append("confirm"),
+        )[-1]
+    )
     monkeypatch.setattr(inspection_module, "find_detail_structure", finder)
     monkeypatch.setattr(inspection_module, "extract_reservation_data", extractor)
     monkeypatch.setattr(inspection_module, "parse_reservation_fields", parser)
@@ -124,6 +132,8 @@ def test_full_phase3_flow_uses_fresh_structure_and_returns_parser_result(
     initial.header_branch.evaluate.assert_not_called()
     initial.content_branch.evaluate.assert_not_called()
     assert initial.content_branch is not initial.scroll_container
+    fresh.dispose.assert_called_once_with()
+    initial.dispose.assert_called_once_with()
 
 
 def test_structured_output_uses_only_explicit_allowlist_and_formats_values() -> None:
@@ -231,6 +241,12 @@ def test_processing_error_prints_no_data_and_never_closes(
     write.assert_not_called()
     initial.close_control.click.assert_not_called()
     fresh.close_control.click.assert_not_called()
+    if stage == "structure":
+        initial.dispose.assert_not_called()
+        fresh.dispose.assert_not_called()
+    else:
+        initial.dispose.assert_called_once_with()
+        fresh.dispose.assert_called_once_with()
 
 
 def test_parser_result_keeps_ambiguous_legacy_fields_empty(
@@ -294,6 +310,7 @@ def test_playwright_error_is_sanitized_and_closes_nothing(
     assert "TEST OSOBA" not in repr(caught.value)
     write.assert_not_called()
     initial.close_control.click.assert_not_called()
+    initial.dispose.assert_called_once_with()
 
 
 def test_existing_detail_flow_keeps_two_click_sites_and_no_other_phase3_clicks() -> None:

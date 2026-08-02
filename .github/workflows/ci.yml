@@ -25,6 +25,9 @@ jobs:
       - name: Install project and development dependencies
         run: python -m pip install -e ".[dev]"
 
+      - name: Install Playwright Chromium
+        run: python -m playwright install chromium
+
       - name: Run tests
         run: python -m pytest
 
