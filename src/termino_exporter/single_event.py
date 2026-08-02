@@ -25,6 +25,7 @@ from termino_exporter.extraction import (
     ReservationExtractionError,
     find_detail_structure,
 )
+from termino_exporter.handles import safe_dispose_handle
 from termino_exporter.inspection import InspectionError, inspect_open_detail
 from termino_exporter.models import Reservation
 
@@ -190,16 +191,7 @@ def _property_value(handle: JSHandle, name: str) -> object:
     try:
         return property_handle.json_value()
     finally:
-        property_handle.dispose()
-
-
-def _dispose_handle(handle: JSHandle | None) -> None:
-    if handle is None:
-        return
-    try:
-        handle.dispose()
-    except Error:
-        pass
+        safe_dispose_handle(property_handle)
 
 
 def find_single_event_handle(page: Page, plan: SingleEventSelectionPlan) -> ElementHandle:
@@ -226,19 +218,23 @@ def find_single_event_handle(page: Page, plan: SingleEventSelectionPlan) -> Elem
     except Error as error:
         raise SingleEventError("SINGLE_EVENT_HANDLE_NOT_FOUND") from error
     finally:
-        _dispose_handle(element_property)
-        _dispose_handle(result)
+        safe_dispose_handle(element_property)
+        safe_dispose_handle(result)
 
 
 def _ensure_detail_closed(page: Page, find_detail: DetailFinder) -> None:
+    structure: DetailStructure | None = None
     try:
-        find_detail(page)
+        structure = find_detail(page)
     except ReservationExtractionError as error:
         if error.code == "DETAIL_STRUCTURE_NOT_FOUND":
             return
         raise SingleEventError("DETAIL_PRECHECK_AMBIGUOUS") from error
     except Error as error:
         raise SingleEventError("DETAIL_PRECHECK_FAILED") from error
+    finally:
+        if structure is not None:
+            structure.dispose()
     raise SingleEventError("DETAIL_ALREADY_OPEN")
 
 
@@ -252,13 +248,17 @@ def _wait_for_known_detail(
 ) -> None:
     deadline = monotonic() + min(timeout_seconds, DETAIL_OPEN_TIMEOUT_SECONDS)
     while True:
+        structure: DetailStructure | None = None
         try:
-            find_detail(page)
+            structure = find_detail(page)
             return
         except ReservationExtractionError:
             pass
         except Error as error:
             raise SingleEventError("EVENT_DETAIL_NOT_RESERVATION_OR_UNSUPPORTED") from error
+        finally:
+            if structure is not None:
+                structure.dispose()
         remaining = deadline - monotonic()
         if remaining <= 0:
             raise SingleEventError("EVENT_DETAIL_NOT_RESERVATION_OR_UNSUPPORTED")
@@ -297,7 +297,7 @@ def inspect_single_event_page(
     except Error as error:
         raise SingleEventError("SINGLE_EVENT_CLICK_FAILED") from error
     finally:
-        _dispose_handle(event_handle)
+        safe_dispose_handle(event_handle)
     _wait_for_known_detail(
         page,
         find_detail,

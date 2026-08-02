@@ -28,11 +28,11 @@ OUTPUT_FIELDS = {
     "is_fixed_or_absolute",
 }
 PRIVATE_VALUES = (
-    "anna-testova",
-    "Jan-Novak",
-    "client-420-700-000-001",
-    "reservation-123-456-789",
-    "test@example.com",
+    "test-osoba",
+    "TEST-OSOBA",
+    "TEST-CLIENT-ID-123-456-789",
+    "TEST-RESERVATION-ID-123-456-789",
+    "test@example.invalid",
     "https://example.com/client/123",
 )
 
@@ -94,11 +94,11 @@ def test_diagnosis_uses_only_safe_probe_texts_without_outputting_them() -> None:
 def test_output_has_exact_schema_and_no_private_dom_fields() -> None:
     page = MagicMock()
     raw_record = safe_raw_record(
-        id="reservation-123-456-789",
-        className="anna-testova",
-        classList=["client-420-700-000-001"],
-        ariaLabel="Jan-Novak",
-        title="test@example.com",
+        id="TEST-RESERVATION-ID-123-456-789",
+        className="test-osoba",
+        classList=["TEST-CLIENT-ID-123-456-789"],
+        ariaLabel="TEST-OSOBA",
+        title="test@example.invalid",
         dataset={"url": "https://example.com/client/123"},
         textContent="soukromý text",
     )
@@ -245,7 +245,7 @@ def test_diagnosis_does_not_write_files() -> None:
 
 def test_playwright_error_is_sanitized() -> None:
     page = MagicMock()
-    page.get_by_text.side_effect = Error("locator s klientským údajem Jana Nováková")
+    page.get_by_text.side_effect = Error("locator s klientským údajem TEST OSOBA")
 
     with pytest.raises(DiagnosisError) as captured_error:
         diagnose_dialog_structure(page)

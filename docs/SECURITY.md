@@ -56,6 +56,17 @@ Repozitář je veřejný. V testech, příkladech a dokumentaci smějí být pou
   Kalendářní text se nepoužívá ke klasifikaci. Pouze jednoznačná známá struktura detailu
   dovolí předání existujícímu zpracování rezervace; neznámý detail se nezavírá neověřeným
   prvkem a operace bezpečně skončí.
+- Každý vytvořený Playwright `JSHandle` nebo `ElementHandle` má jednoznačného vlastníka.
+  Dočasné handly se uvolňují ve `finally`; vlastnictví vráceného handle přechází na volajícího.
+  `DetailStructure` uvolňuje všechny své vlastní wrappery idempotentně a chyby Playwrightu při
+  `dispose()` nesmějí zakrýt původní aplikační chybu. Caller-owned vstupní obsah struktura
+  neočekávaně neuvolňuje.
+- BrowserContext se nadále vždy zavře, ale slouží jen jako poslední pojistka. Primární úklid
+  handlů probíhá explicitně během jednoho zpracování detailu, aby se wrappery nehromadily při
+  budoucím opakování toku.
+- Headless browserové integrační testy používají pouze lokální syntetické HTML se smyšlenými
+  hodnotami. Nepřistupují k Termino ani k internetu, nepoužívají produkční HTML, persistentní
+  profil, screenshoty, trace, video, HAR ani autentizační stav.
 
 Před commitem je nutné zkontrolovat změny i neznámé soubory a ověřit, že neobsahují
 osobní, autentizační ani produkční data.

@@ -305,6 +305,7 @@ def test_ok_status_without_element_is_not_accepted() -> None:
 
 def test_already_open_detail_prevents_event_click(monkeypatch: pytest.MonkeyPatch) -> None:
     handle = MagicMock()
+    open_structure = MagicMock()
     monkeypatch.setattr(
         single_event_module, "find_single_event_handle", MagicMock(return_value=handle)
     )
@@ -312,10 +313,11 @@ def test_already_open_detail_prevents_event_click(monkeypatch: pytest.MonkeyPatc
         inspect_single_event_page(
             MagicMock(),
             timeout_seconds=3,
-            find_detail=MagicMock(return_value=MagicMock()),
+            find_detail=MagicMock(return_value=open_structure),
             read_snapshot=MagicMock(return_value=_snapshot()),
         )
     handle.click.assert_not_called()
+    open_structure.dispose.assert_called_once_with()
 
 
 def test_ambiguous_detail_precheck_prevents_event_click(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -333,6 +335,24 @@ def test_ambiguous_detail_precheck_prevents_event_click(monkeypatch: pytest.Monk
             read_snapshot=MagicMock(return_value=_snapshot()),
         )
     handle.click.assert_not_called()
+
+
+def test_playwright_detail_precheck_failure_is_sanitized(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    handle_finder = MagicMock()
+    monkeypatch.setattr(single_event_module, "find_single_event_handle", handle_finder)
+
+    with pytest.raises(SingleEventError, match="^DETAIL_PRECHECK_FAILED$") as caught:
+        inspect_single_event_page(
+            MagicMock(),
+            timeout_seconds=3,
+            find_detail=MagicMock(side_effect=Error("TEST OSOBA test@example.invalid")),
+            read_snapshot=MagicMock(return_value=_snapshot()),
+        )
+
+    assert "TEST OSOBA" not in str(caught.value)
+    handle_finder.assert_not_called()
 
 
 def test_snapshot_local_layer_reordering_keeps_same_semantic_plan(
@@ -445,8 +465,12 @@ def test_event_gets_one_click_and_existing_inspector_runs_once(
     handle = MagicMock()
     reservation = Reservation(client_name="TEST OSOBA")
     inspector = MagicMock(return_value=reservation)
+    confirmation_structure = MagicMock()
     finder = MagicMock(
-        side_effect=[ReservationExtractionError("DETAIL_STRUCTURE_NOT_FOUND"), MagicMock()]
+        side_effect=[
+            ReservationExtractionError("DETAIL_STRUCTURE_NOT_FOUND"),
+            confirmation_structure,
+        ]
     )
     monkeypatch.setattr(
         single_event_module, "find_single_event_handle", MagicMock(return_value=handle)
@@ -461,6 +485,7 @@ def test_event_gets_one_click_and_existing_inspector_runs_once(
     assert result is reservation
     handle.click.assert_called_once_with(timeout=3000)
     handle.dispose.assert_called_once_with()
+    confirmation_structure.dispose.assert_called_once_with()
     inspector.assert_called_once_with(page)
 
 
@@ -568,6 +593,36 @@ def test_unknown_detail_never_runs_inspector_or_unverified_close(
     handle.query_selector.assert_not_called()
 
 
+def test_playwright_error_while_confirming_detail_is_sanitized(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    handle = MagicMock()
+    monkeypatch.setattr(
+        single_event_module,
+        "find_single_event_handle",
+        MagicMock(return_value=handle),
+    )
+
+    with pytest.raises(
+        SingleEventError,
+        match="^EVENT_DETAIL_NOT_RESERVATION_OR_UNSUPPORTED$",
+    ) as caught:
+        inspect_single_event_page(
+            MagicMock(),
+            timeout_seconds=3,
+            find_detail=MagicMock(
+                side_effect=[
+                    ReservationExtractionError("DETAIL_STRUCTURE_NOT_FOUND"),
+                    Error("TEST OSOBA test@example.invalid"),
+                ]
+            ),
+            read_snapshot=MagicMock(return_value=_snapshot()),
+        )
+
+    assert "TEST OSOBA" not in str(caught.value)
+    handle.dispose.assert_called_once_with()
+
+
 def test_detail_processing_failure_is_mapped_to_fixed_phase4b_code(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -577,6 +632,7 @@ def test_detail_processing_failure_is_mapped_to_fixed_phase4b_code(
         single_event_module, "find_single_event_handle", MagicMock(return_value=handle)
     )
 
+    confirmation_structure = MagicMock()
     with pytest.raises(SingleEventError, match="^EVENT_DETAIL_PROCESSING_FAILED$") as caught:
         inspect_single_event_page(
             page,
@@ -584,7 +640,7 @@ def test_detail_processing_failure_is_mapped_to_fixed_phase4b_code(
             find_detail=MagicMock(
                 side_effect=[
                     ReservationExtractionError("DETAIL_STRUCTURE_NOT_FOUND"),
-                    MagicMock(),
+                    confirmation_structure,
                 ]
             ),
             read_snapshot=MagicMock(return_value=_snapshot()),
@@ -597,6 +653,7 @@ def test_detail_processing_failure_is_mapped_to_fixed_phase4b_code(
     assert "test@example.invalid" not in str(caught.value)
     handle.click.assert_called_once_with(timeout=3000)
     handle.dispose.assert_called_once_with()
+    confirmation_structure.dispose.assert_called_once_with()
 
 
 def test_single_event_module_has_no_unsafe_interactions() -> None:

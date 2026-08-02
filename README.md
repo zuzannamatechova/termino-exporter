@@ -134,7 +134,8 @@ nahradit. Ze strukturálních vztahů popisek → hodnota vytvoří mapu polí, 
 načte z ověřené hlavičky a data převede čistým parserem na `Reservation`. Očištěný
 `raw_detail` zůstává pouze v paměti, není součástí `repr`, neovlivňuje rovnost objektů a
 nikdy se nevypisuje. Terminálový výstup obsahuje jen pevný allowlist strukturovaných
-hodnot v deterministickém formátu. Phase 4 zatím nebyla zahájena.
+hodnot v deterministickém formátu. Phase 4 byla zahájena, ale zpracování celého dne ještě
+není implementováno.
 
 Příkaz je určen výhradně pro čtení. Nesmí se používat k vytváření, úpravám, kopírování,
 rušení ani mazání rezervací. Podrobný bezpečný postup je v
@@ -142,8 +143,19 @@ rušení ani mazání rezervací. Podrobný bezpečný postup je v
 
 ## Vývoj a kontroly
 
+Testovací sada obsahuje také headless browserové testy označené markerem `browser`.
+Používají výhradně lokální syntetický DOM se smyšlenými hodnotami; neotevírají Termino,
+nepoužívají produkční HTML a neprovádějí síťové požadavky. Každý test používá čistý
+BrowserContext bez persistentního profilu, screenshotů, trace, videa nebo HAR.
+
+Playwright `JSHandle` a `ElementHandle` mají explicitní vlastnictví. Dočasné handly uvolňuje
+funkce, která je vytvořila, a vrácené handly uvolňuje volající. Handly detailu jsou sdruženy
+v `DetailStructure` a uvolněny ještě před zavřením BrowserContext. Zavření contextu zůstává
+poslední bezpečnostní pojistkou, nikoli primárním mechanismem úklidu.
+
 ```powershell
 python -m pytest
+python -m pytest -m browser
 python -m pytest --cov=termino_exporter --cov-report=term-missing
 python -m ruff check .
 python -m ruff format --check .

@@ -65,7 +65,7 @@ def test_diagnosis_outputs_only_exact_allowlisted_schema_and_booleans() -> None:
         hasNonemptyTextNode=True,
         hasSafeAccessibleName=True,
         isForbiddenAction=True,
-        clientName="Jana Nováková",
+        clientName="TEST OSOBA",
         ariaLabel="Zavřít",
         text="soukromý text rezervace",
     )
@@ -82,7 +82,7 @@ def test_diagnosis_outputs_only_exact_allowlisted_schema_and_booleans() -> None:
     assert record["has_nonempty_text_node"] is True
     assert record["has_safe_accessible_name"] is True
     assert record["is_forbidden_action"] is True
-    assert "Jana Nováková" not in output[0]
+    assert "TEST OSOBA" not in output[0]
     assert "soukromý text rezervace" not in output[0]
     assert "Upravit" not in output[0]
     assert "Zavřít" not in output[0]
@@ -233,7 +233,7 @@ def test_invalid_record_has_structure_error_code_and_no_dom_data() -> None:
     page.get_by_role.return_value = _empty_locator()
     button = MagicMock()
     button.is_visible.return_value = True
-    button.evaluate.return_value = {"clientName": "Jana Nováková"}
+    button.evaluate.return_value = {"clientName": "TEST OSOBA"}
     content, _root = _content_with_root([button])
     write = MagicMock()
 
@@ -241,14 +241,14 @@ def test_invalid_record_has_structure_error_code_and_no_dom_data() -> None:
         diagnose_close_buttons(page, content, write)
 
     assert caught.value.code == "CLOSE_DIAG_STRUCTURE_ERROR"
-    assert "Jana Nováková" not in str(caught.value)
+    assert "TEST OSOBA" not in str(caught.value)
     write.assert_not_called()
 
 
 def test_playwright_error_has_specific_code_and_sanitized_message() -> None:
     page = MagicMock()
     content = MagicMock()
-    content.evaluate_handle.side_effect = Error("DOM obsahuje Jana Nováková")
+    content.evaluate_handle.side_effect = Error("DOM obsahuje TEST OSOBA")
     write = MagicMock()
 
     with pytest.raises(CloseDiagnosisError) as caught:
@@ -256,6 +256,54 @@ def test_playwright_error_has_specific_code_and_sanitized_message() -> None:
 
     assert caught.value.code == "CLOSE_DIAG_PLAYWRIGHT_ERROR"
     assert str(caught.value) == "CLOSE_DIAG_PLAYWRIGHT_ERROR"
-    assert "Jana Nováková" not in str(caught.value)
+    assert "TEST OSOBA" not in str(caught.value)
     assert isinstance(caught.value.__cause__, Error)
     write.assert_not_called()
+
+
+def test_close_diagnosis_disposes_all_temporary_handle_wrappers() -> None:
+    page = MagicMock()
+    safe_name_handle = MagicMock()
+    forbidden_handle = MagicMock()
+
+    def locator_for(handle: MagicMock) -> MagicMock:
+        candidate = MagicMock()
+        candidate.is_visible.return_value = True
+        candidate.element_handle.return_value = handle
+        locator = MagicMock()
+        locator.count.return_value = 1
+        locator.nth.return_value = candidate
+        return locator
+
+    page.get_by_role.side_effect = [
+        locator_for(safe_name_handle),
+        locator_for(forbidden_handle),
+    ]
+    content = MagicMock()
+    roots = [MagicMock(name=f"root-{index}") for index in range(MAX_ROOT_DEPTH)]
+    conversion_handles = []
+    current = content
+    for root in roots:
+        conversion = MagicMock()
+        conversion.as_element.return_value = root
+        current.evaluate_handle.return_value = conversion
+        conversion_handles.append(conversion)
+        current = root
+    button = MagicMock()
+    button.is_visible.return_value = True
+    button.evaluate.return_value = _safe_raw()
+    hidden_button = MagicMock()
+    hidden_button.is_visible.return_value = False
+    roots[-1].query_selector_all.return_value = [button, hidden_button]
+
+    diagnose_close_buttons(page, content, MagicMock())
+
+    for conversion in conversion_handles:
+        conversion.dispose.assert_called_once_with()
+    for root in roots:
+        root.dispose.assert_called_once_with()
+    safe_name_handle.dispose.assert_called_once_with()
+    forbidden_handle.dispose.assert_called_once_with()
+    button.dispose.assert_called_once_with()
+    hidden_button.dispose.assert_called_once_with()
+    content.dispose.assert_not_called()

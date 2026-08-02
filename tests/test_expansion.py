@@ -1,7 +1,10 @@
 from unittest.mock import MagicMock
 
 import pytest
+from playwright.sync_api import Error
 
+import termino_exporter.inspection as inspection_module
+from termino_exporter.extraction import DetailStructure
 from termino_exporter.inspection import (
     EXPAND_CLICK_TIMEOUT_MS,
     EXPAND_POLL_INTERVAL_SECONDS,
@@ -45,6 +48,8 @@ def test_first_less_button_increase_confirms_click() -> None:
         [less_button],
     )
     less_button.click.assert_not_called()
+    candidate.dispose.assert_called_once_with()
+    less_button.dispose.assert_called_once_with()
 
 
 def test_second_less_button_increase_confirms_click() -> None:
@@ -181,6 +186,40 @@ def test_unconfirmed_expansion_stops_without_second_click() -> None:
 
     candidate.click.assert_called_once_with(timeout=EXPAND_CLICK_TIMEOUT_MS)
     old_less.click.assert_not_called()
+    candidate.dispose.assert_called_once_with()
+    old_less.dispose.assert_called_once_with()
+
+
+def test_timeout_keeps_candidate_alive_through_last_check_then_disposes() -> None:
+    events: list[str] = []
+    candidate = MagicMock()
+    old_less = MagicMock()
+    candidate.click.side_effect = lambda **_kwargs: events.append("click")
+    candidate.evaluate.side_effect = lambda *_args: events.append("verify") or False
+    candidate.dispose.side_effect = lambda: events.append("dispose")
+    finder = _finder_with_results([candidate], [old_less], [candidate], [old_less])
+    content = MagicMock()
+    content.inner_text.side_effect = ["x", "x"]
+
+    with pytest.raises(ExpansionError):
+        expand_all_more_buttons(MagicMock(), content, find_buttons=finder, progress_timeout_ms=0)
+
+    assert events == ["click", "verify", "dispose"]
+
+
+def test_reused_mock_wrapper_is_never_disposed_twice() -> None:
+    candidate = MagicMock()
+    old_less = MagicMock()
+    candidate.evaluate.return_value = False
+    finder = _finder_with_results([candidate], [old_less], [candidate], [old_less])
+    content = MagicMock()
+    content.inner_text.side_effect = ["x", "x"]
+
+    with pytest.raises(ExpansionError):
+        expand_all_more_buttons(MagicMock(), content, find_buttons=finder, progress_timeout_ms=0)
+
+    candidate.dispose.assert_called_once_with()
+    old_less.dispose.assert_called_once_with()
 
 
 def test_more_count_can_drop_on_second_poll_without_another_click() -> None:
@@ -273,8 +312,6 @@ def test_candidate_can_change_to_less_after_delayed_poll() -> None:
 
 
 def test_stale_candidate_during_poll_is_not_exposed_as_playwright_error() -> None:
-    from playwright.sync_api import Error
-
     candidate = MagicMock()
     candidate.evaluate.side_effect = Error("TEST CITLIVÝ DETAIL")
     finder = _finder_with_results([candidate], [], [candidate], [])
@@ -400,3 +437,31 @@ def test_expansion_error_prints_no_detail_or_client_data(
 
     write.assert_not_called()
     structure.close_control.click.assert_not_called()
+    structure.dispose.assert_called_once_with()
+
+
+def test_detail_structure_dispose_error_does_not_mask_expansion_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    handles = [MagicMock() for _ in range(6)]
+    handles[0].dispose.side_effect = Error("TEST DOM")
+    structure = DetailStructure(
+        root=handles[0],
+        header_branch=handles[1],
+        content_branch=handles[2],
+        scroll_container=handles[3],
+        action_branch=handles[4],
+        close_control=handles[5],
+        _owned_handles=tuple(handles),
+    )
+    monkeypatch.setattr(
+        inspection_module,
+        "find_detail_structure",
+        MagicMock(return_value=structure),
+    )
+
+    with pytest.raises(ExpansionError, match="původní chyba"):
+        inspect_open_detail(
+            MagicMock(),
+            expand_detail=MagicMock(side_effect=ExpansionError("původní chyba")),
+        )

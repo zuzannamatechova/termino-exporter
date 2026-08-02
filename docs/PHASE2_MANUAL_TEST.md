@@ -1,7 +1,7 @@
 # Ruční test Phase 2
 
 Tento postup ověřuje bezpečné rozbalení celého DOM obsahu jedné ručně otevřené
-rezervace. Použijte pouze dummy rezervaci `Jana Nováková`; nevkládejte do dokumentace
+rezervace. Použijte pouze dummy rezervaci `TEST OSOBA`; nevkládejte do dokumentace
 telefon, e-mail, screenshot ani terminálový výstup rezervace.
 
 ## Předpoklady

@@ -6,6 +6,8 @@ from collections.abc import Callable, Mapping
 
 from playwright.sync_api import ElementHandle, Error, Page
 
+from termino_exporter.handles import dispose_handles, safe_dispose_handle
+
 OutputWriter = Callable[[str], None]
 
 MAX_VISIBLE_BUTTONS = 20
@@ -191,32 +193,49 @@ def named_visible_button_handles(
     page: Page,
     names: tuple[str, ...],
 ) -> list[ElementHandle]:
+    """Return owned wrappers whose lifecycle is transferred to the caller."""
     pattern = re.compile(rf"^({'|'.join(re.escape(name) for name in names)})$")
     locator = page.get_by_role("button", name=pattern)
     handles: list[ElementHandle] = []
-    for index in range(locator.count()):
-        candidate = locator.nth(index)
-        if candidate.is_visible():
-            handle = candidate.element_handle()
-            if handle is not None:
-                handles.append(handle)
-    return handles
+    try:
+        for index in range(locator.count()):
+            candidate = locator.nth(index)
+            if candidate.is_visible():
+                handle = candidate.element_handle()
+                if handle is not None:
+                    handles.append(handle)
+        return handles
+    except BaseException:
+        dispose_handles(handles)
+        raise
 
 
 def _bounded_root(content: ElementHandle) -> tuple[ElementHandle, int]:
+    """Return an owned root wrapper while retaining caller ownership of content."""
     root = content
     root_depth = 0
-    for depth in range(1, MAX_ROOT_DEPTH + 1):
-        parent_handle = root.evaluate_handle(PARENT_ELEMENT_SCRIPT)
-        parent = parent_handle.as_element()
-        if parent is None:
-            parent_handle.dispose()
-            if root_depth == 0:
-                raise CloseDiagnosisError("CLOSE_DIAG_ROOT_NOT_FOUND")
-            break
-        root = parent
-        root_depth = depth
-    return root, root_depth
+    owns_root = False
+    try:
+        for depth in range(1, MAX_ROOT_DEPTH + 1):
+            parent_handle = root.evaluate_handle(PARENT_ELEMENT_SCRIPT)
+            parent = parent_handle.as_element()
+            if parent is None:
+                safe_dispose_handle(parent_handle)
+                if root_depth == 0:
+                    raise CloseDiagnosisError("CLOSE_DIAG_ROOT_NOT_FOUND")
+                break
+            if parent is not parent_handle:
+                safe_dispose_handle(parent_handle)
+            if owns_root:
+                safe_dispose_handle(root)
+            root = parent
+            owns_root = True
+            root_depth = depth
+        return root, root_depth
+    except BaseException:
+        if owns_root:
+            safe_dispose_handle(root)
+        raise
 
 
 def diagnose_close_buttons(
@@ -225,12 +244,17 @@ def diagnose_close_buttons(
     write: OutputWriter = print,
 ) -> None:
     """Print only bounded boolean and numeric structure for candidate buttons."""
+    root: ElementHandle | None = None
+    safe_names: list[ElementHandle] = []
+    forbidden_actions: list[ElementHandle] = []
+    buttons: list[ElementHandle] = []
     try:
         root, root_depth = _bounded_root(content)
         safe_names = named_visible_button_handles(page, SAFE_CLOSE_NAMES)
         forbidden_actions = named_visible_button_handles(page, FORBIDDEN_ACTION_NAMES)
         visible_buttons: list[ElementHandle] = []
-        for button in root.query_selector_all("button"):
+        buttons = root.query_selector_all("button")
+        for button in buttons:
             if button.is_visible():
                 visible_buttons.append(button)
                 if len(visible_buttons) > MAX_VISIBLE_BUTTONS:
@@ -259,6 +283,10 @@ def diagnose_close_buttons(
         ]
     except Error as error:
         raise CloseDiagnosisError("CLOSE_DIAG_PLAYWRIGHT_ERROR") from error
+    finally:
+        dispose_handles((*safe_names, *forbidden_actions, *buttons))
+        if root is not content:
+            safe_dispose_handle(root)
 
     for record in records:
         write(json.dumps(record, ensure_ascii=False, sort_keys=True))

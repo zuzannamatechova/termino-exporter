@@ -304,7 +304,7 @@ def test_diagnostic_playwright_error_is_sanitized_in_cli(
     tmp_path: Path,
 ) -> None:
     error = DiagnosisError("Diagnostiku se nepodařilo bezpečně dokončit.")
-    error.__cause__ = Error("locator obsahující Jana Nováková")
+    error.__cause__ = Error("locator obsahující TEST OSOBA")
     monkeypatch.setattr(cli, "default_profile_dir", lambda: tmp_path / "profile")
     monkeypatch.setattr(cli, "safe_profile_dir", lambda path: path)
     inspect = MagicMock(side_effect=error)
@@ -314,7 +314,7 @@ def test_diagnostic_playwright_error_is_sanitized_in_cli(
 
     stderr = capsys.readouterr().err
     assert "Diagnostiku se nepodařilo bezpečně dokončit." in stderr
-    assert "Jana Nováková" not in stderr
+    assert "TEST OSOBA" not in stderr
     assert "locator" not in stderr
 
 
@@ -324,7 +324,7 @@ def test_close_diagnostic_prints_only_safe_error_code(
     tmp_path: Path,
 ) -> None:
     error = CloseDiagnosisError("CLOSE_DIAG_PLAYWRIGHT_ERROR")
-    error.__cause__ = Error("DOM obsahuje Jana Nováková")
+    error.__cause__ = Error("DOM obsahuje TEST OSOBA")
     monkeypatch.setattr(cli, "default_profile_dir", lambda: tmp_path / "profile")
     monkeypatch.setattr(cli, "safe_profile_dir", lambda path: path)
     monkeypatch.setattr(cli, "inspect_one_reservation", MagicMock(side_effect=error))
@@ -333,5 +333,5 @@ def test_close_diagnostic_prints_only_safe_error_code(
 
     stderr = capsys.readouterr().err
     assert "Chyba: CLOSE_DIAG_PLAYWRIGHT_ERROR" in stderr
-    assert "Jana Nováková" not in stderr
+    assert "TEST OSOBA" not in stderr
     assert "DOM" not in stderr

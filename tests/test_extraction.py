@@ -125,6 +125,137 @@ def test_unique_header_content_action_structure(
         action.click.assert_not_called()
 
 
+def test_returned_structure_owns_new_handles_but_not_caller_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _page, structure, actions = _unique_structure(monkeypatch)
+
+    for handle in (
+        structure.root,
+        structure.header_branch,
+        structure.content_branch,
+        structure.action_branch,
+        structure.close_control,
+    ):
+        handle.dispose.assert_not_called()
+    structure.scroll_container.dispose.assert_not_called()
+    for action in actions:
+        action.dispose.assert_called_once_with()
+
+    structure.dispose()
+
+    for handle in (
+        structure.root,
+        structure.header_branch,
+        structure.content_branch,
+        structure.action_branch,
+        structure.close_control,
+    ):
+        handle.dispose.assert_called_once_with()
+    structure.scroll_container.dispose.assert_not_called()
+
+
+def test_successful_detail_content_disposes_temporaries_but_returns_live_content() -> None:
+    page = MagicMock()
+    date_handle = MagicMock()
+    time_handle = MagicMock()
+    content = MagicMock()
+    result_handle = MagicMock()
+    result_handle.as_element.return_value = content
+    page.get_by_text.side_effect = [_visible_locator(date_handle), _visible_locator(time_handle)]
+    date_handle.evaluate_handle.return_value = result_handle
+
+    assert find_detail_content(page) is content
+
+    date_handle.dispose.assert_called_once_with()
+    time_handle.dispose.assert_called_once_with()
+    result_handle.dispose.assert_called_once_with()
+    content.dispose.assert_not_called()
+
+
+def test_failed_as_element_disposes_result_and_label_handles() -> None:
+    page = MagicMock()
+    date_handle = MagicMock()
+    time_handle = MagicMock()
+    result_handle = MagicMock()
+    result_handle.as_element.return_value = None
+    page.get_by_text.side_effect = [_visible_locator(date_handle), _visible_locator(time_handle)]
+    date_handle.evaluate_handle.return_value = result_handle
+
+    with pytest.raises(ReservationExtractionError, match="^DETAIL_STRUCTURE_NOT_UNIQUE$"):
+        find_detail_content(page)
+
+    date_handle.dispose.assert_called_once_with()
+    time_handle.dispose.assert_called_once_with()
+    result_handle.dispose.assert_called_once_with()
+
+
+def test_second_label_handle_error_releases_first_handle() -> None:
+    page = MagicMock()
+    date_handle = MagicMock()
+    date_locator = _visible_locator(date_handle)
+    time_locator = _visible_locator(MagicMock())
+    time_locator.nth.return_value.element_handle.side_effect = Error("TEST DOM")
+    page.get_by_text.side_effect = [date_locator, time_locator]
+
+    with pytest.raises(ReservationExtractionError, match="^DETAIL_STRUCTURE_NOT_UNIQUE$"):
+        find_detail_content(page)
+
+    date_handle.dispose.assert_called_once_with()
+
+
+def test_evaluate_handle_error_releases_both_label_handles() -> None:
+    page = MagicMock()
+    date_handle = MagicMock()
+    time_handle = MagicMock()
+    page.get_by_text.side_effect = [_visible_locator(date_handle), _visible_locator(time_handle)]
+    date_handle.evaluate_handle.side_effect = Error("TEST DOM")
+
+    with pytest.raises(ReservationExtractionError, match="^DETAIL_STRUCTURE_NOT_UNIQUE$"):
+        find_detail_content(page)
+
+    date_handle.dispose.assert_called_once_with()
+    time_handle.dispose.assert_called_once_with()
+
+
+def test_internally_found_content_is_transferred_to_returned_structure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page, actions = _structure_page()
+    content = MagicMock()
+    root = MagicMock()
+    header = MagicMock()
+    content_branch = MagicMock()
+    action_branch = MagicMock()
+    close = MagicMock()
+    close.is_visible.return_value = True
+    close.evaluate.return_value = _safe_close_signature()
+    content.evaluate.return_value = False
+    root.evaluate.return_value = True
+    root.query_selector_all.return_value = [close]
+    _parent(content, root)
+    _parent(root, None)
+    monkeypatch.setattr(extraction, "find_detail_content", MagicMock(return_value=content))
+
+    def branch_for(_root: MagicMock, target: MagicMock) -> MagicMock:
+        assert _root is root
+        if target is content:
+            return content_branch
+        if target is actions[0]:
+            return action_branch
+        if target is close:
+            return header
+        raise AssertionError("Neočekávaný testovací cíl větve")
+
+    monkeypatch.setattr(extraction, "_branch_containing", branch_for)
+
+    internal_structure = find_detail_structure(page)
+
+    content.dispose.assert_not_called()
+    internal_structure.dispose()
+    content.dispose.assert_called_once_with()
+
+
 @pytest.mark.parametrize("case", ["missing-header", "missing-action", "reversed-order"])
 def test_invalid_branch_structure_is_rejected(case: str) -> None:
     page, _actions = _structure_page()
@@ -139,6 +270,8 @@ def test_invalid_branch_structure_is_rejected(case: str) -> None:
         find_detail_structure(page, content)
 
     assert str(caught.value) == "DETAIL_STRUCTURE_NOT_UNIQUE"
+    root.dispose.assert_called_once_with()
+    content.dispose.assert_not_called()
 
 
 def test_multiple_possible_roots_are_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
