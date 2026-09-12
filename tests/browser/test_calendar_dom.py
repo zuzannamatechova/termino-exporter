@@ -12,6 +12,7 @@ from termino_exporter.calendar_diagnosis import (
     read_calendar_snapshot,
     resolve_calendar_snapshot,
 )
+from termino_exporter.day_plan import DayPlanError, create_day_selection_plan
 from termino_exporter.handles import safe_dispose_handle
 from termino_exporter.single_event import (
     SingleEventError,
@@ -210,4 +211,65 @@ def test_handle_mode_rejects_changed_fingerprint(synthetic_page: Page) -> None:
 
     with pytest.raises(SingleEventError, match="^CALENDAR_STRUCTURE_CHANGED$"):
         find_single_event_handle(synthetic_page, plan)
+    assert _click_count(synthetic_page) == 0
+
+
+@pytest.mark.parametrize("event_count", [2, 3, 10])
+def test_phase4c1_day_plan_uses_baseline_ordinals_without_click(
+    synthetic_page: Page,
+    event_count: int,
+) -> None:
+    _set_calendar(synthetic_page, 1, event_counts=(event_count,))
+
+    plan = create_day_selection_plan(read_calendar_snapshot(synthetic_page))
+
+    assert tuple(target.baseline_ordinal for target in plan.targets) == tuple(
+        range(1, event_count + 1)
+    )
+    assert plan.event_count == event_count
+    assert _click_count(synthetic_page) == 0
+
+
+def test_phase4c1_rejects_eleven_events_without_click(synthetic_page: Page) -> None:
+    _set_calendar(synthetic_page, 1, event_counts=(11,))
+
+    with pytest.raises(DayPlanError, match="^DAY_EVENT_LIMIT_EXCEEDED$"):
+        create_day_selection_plan(read_calendar_snapshot(synthetic_page))
+    assert _click_count(synthetic_page) == 0
+
+
+def test_phase4c1_rejects_unproven_empty_event_layer_without_click(
+    synthetic_page: Page,
+) -> None:
+    _set_calendar(synthetic_page, 1, event_counts=(0,))
+
+    with pytest.raises(DayPlanError, match="^DAY_EMPTY_EVENT_LAYER_UNPROVEN$"):
+        create_day_selection_plan(read_calendar_snapshot(synthetic_page))
+    assert _click_count(synthetic_page) == 0
+
+
+def test_phase4c1_canonicalizes_nested_equivalent_grid_anchors_without_click(
+    synthetic_page: Page,
+) -> None:
+    _set_calendar(synthetic_page, 1, event_counts=(2,), nested_grid_wrappers=3)
+
+    plan = create_day_selection_plan(read_calendar_snapshot(synthetic_page))
+
+    assert plan.event_count == 2
+    assert _click_count(synthetic_page) == 0
+
+
+def test_phase4c1_rejects_two_independent_grids_without_click(synthetic_page: Page) -> None:
+    _set_calendar(synthetic_page, 1, event_counts=(2,), second_grid=True)
+
+    with pytest.raises(DayPlanError, match="^DAY_CALENDAR_STRUCTURE_CHANGED$"):
+        create_day_selection_plan(read_calendar_snapshot(synthetic_page))
+    assert _click_count(synthetic_page) == 0
+
+
+def test_phase4c1_rejects_two_event_layers_without_click(synthetic_page: Page) -> None:
+    _set_calendar(synthetic_page, 1, event_counts=(2,), second_event_layer=True)
+
+    with pytest.raises(DayPlanError, match="^DAY_CALENDAR_STRUCTURE_CHANGED$"):
+        create_day_selection_plan(read_calendar_snapshot(synthetic_page))
     assert _click_count(synthetic_page) == 0

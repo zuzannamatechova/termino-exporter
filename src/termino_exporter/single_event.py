@@ -20,6 +20,10 @@ from termino_exporter.calendar_diagnosis import (
     read_calendar_snapshot,
     resolve_calendar_snapshot,
 )
+from termino_exporter.day_plan import (
+    LayerStructureFingerprint as SingleEventLayerFingerprint,
+)
+from termino_exporter.day_plan import layer_structure_fingerprint
 from termino_exporter.extraction import (
     DetailStructure,
     ReservationExtractionError,
@@ -45,20 +49,6 @@ EVENT_CLICK_TIMEOUT_MS = 3_000
 
 class SingleEventError(RuntimeError):
     """Expected safe failure while selecting one calendar event."""
-
-
-@dataclass(frozen=True, slots=True)
-class SingleEventLayerFingerprint:
-    """Anonymous numeric and boolean structure of one selected calendar layer."""
-
-    branch_count: int
-    gridcell_counts: tuple[int, ...]
-    direct_child_counts: tuple[int, ...]
-    descendant_counts: tuple[int, ...]
-    event_block_counts: tuple[int, ...]
-    navigation_like: bool
-    header_like: bool
-    shadowed_by_nested_equivalent_grid_anchor: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,16 +83,7 @@ def _is_event_layer(layer: CalendarLayerSnapshot, column_count: int) -> bool:
 
 
 def _layer_fingerprint(layer: CalendarLayerSnapshot) -> SingleEventLayerFingerprint:
-    return SingleEventLayerFingerprint(
-        branch_count=layer.branch_count,
-        gridcell_counts=layer.gridcell_counts,
-        direct_child_counts=layer.direct_child_counts,
-        descendant_counts=layer.descendant_counts,
-        event_block_counts=layer.event_block_counts,
-        navigation_like=layer.navigation_like,
-        header_like=layer.header_like,
-        shadowed_by_nested_equivalent_grid_anchor=(layer.shadowed_by_nested_equivalent_grid_anchor),
-    )
+    return layer_structure_fingerprint(layer)
 
 
 def create_single_event_plan(snapshot: CalendarDomSnapshot) -> SingleEventSelectionPlan:
