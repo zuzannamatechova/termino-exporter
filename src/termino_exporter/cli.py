@@ -19,11 +19,26 @@ from termino_exporter.browser import (
 from termino_exporter.calendar_diagnosis import CalendarDiagnosisError, diagnose_calendar
 from termino_exporter.close_diagnosis import CloseDiagnosisError
 from termino_exporter.diagnosis import DiagnosisError
+from termino_exporter.identity_candidate import IdentityCandidateError
+from termino_exporter.identity_output import publish_identity_result
+from termino_exporter.identity_supervisor import run_identity_supervisor
 from termino_exporter.inspection import InspectionError, inspect_one_reservation
 from termino_exporter.single_event import SingleEventError, inspect_single_event
 
 DEFAULT_URL = "https://local.termino.eu/"
 DEFAULT_TIMEOUT_SECONDS = 30.0
+ID0_COMMAND = "diagnose-event-identity-candidates"
+ID0_HELP = """použití: termino-exporter diagnose-event-identity-candidates --dummy-only [volby]
+
+Explicitně test-only Phase 4C-ID0 technická diagnostika allowlisted atributů.
+
+volby:
+  -h, --help                 zobrazí tuto pevnou nápovědu a skončí
+  --dummy-only               povinné potvrzení dummy/test-only použití
+  --url URL                  adresa kalendáře
+  --profile-dir CESTA        vyhrazený lokální profil prohlížeče
+  --timeout-seconds SEKUNDY  limit startu a navigace, nejvýše 300
+"""
 
 
 class CzechArgumentParser(argparse.ArgumentParser):
@@ -186,7 +201,93 @@ def create_parser() -> CzechArgumentParser:
         default=DEFAULT_TIMEOUT_SECONDS,
         help=f"časový limit operací v sekundách (výchozí: {DEFAULT_TIMEOUT_SECONDS:g})",
     )
+    identity_parser = subparsers.add_parser(
+        ID0_COMMAND,
+        help="dummy-only technicky ověří allowlisted candidate atributy bez schválení identity",
+        add_help=False,
+    )
+    identity_parser.add_argument("-h", "--help", action="store_true")
+    identity_parser.add_argument("--dummy-only", action="store_true")
+    identity_parser.add_argument("--url", default=DEFAULT_URL)
+    identity_parser.add_argument("--profile-dir", type=Path, default=None)
+    identity_parser.add_argument("--timeout-seconds", default=DEFAULT_TIMEOUT_SECONDS)
     return parser
+
+
+def _id0_arguments(argv: Sequence[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(add_help=False, exit_on_error=False)
+    parser.add_argument("--dummy-only", action="store_true")
+    parser.add_argument("--url")
+    parser.add_argument("--profile-dir")
+    parser.add_argument("--timeout-seconds")
+    try:
+        args, unknown = parser.parse_known_args(argv)
+        if unknown:
+            raise ValueError
+        url = DEFAULT_URL if args.url is None else _web_url(args.url)
+        timeout = (
+            DEFAULT_TIMEOUT_SECONDS
+            if args.timeout_seconds is None
+            else _positive_seconds(args.timeout_seconds)
+        )
+        if timeout > 300:
+            raise ValueError
+        profile = default_profile_dir() if args.profile_dir is None else Path(args.profile_dir)
+        if len(url.encode("utf-8")) > 2048 or len(str(profile).encode("utf-8")) > 8192:
+            raise ValueError
+        return argparse.Namespace(
+            dummy_only=args.dummy_only, url=url, timeout_seconds=timeout, profile_dir=profile
+        )
+    except (argparse.ArgumentError, argparse.ArgumentTypeError, TypeError, ValueError):
+        raise IdentityCandidateError("ID0_INVALID_ARGUMENTS") from None
+
+
+def _fixed_id0_error(code: str) -> int:
+    try:
+        text = f"Chyba: {code}\n"
+        if not code.isascii() or len(text.encode("utf-8")) > 128:
+            text = "Chyba: ID0_INTERNAL_ERROR\n"
+        sys.stderr.write(text)
+        sys.stderr.flush()
+    except Exception:
+        pass
+    if code == "ID0_INTERRUPTED":
+        return 130
+    if code == "ID0_INVALID_ARGUMENTS":
+        return 2
+    return 1
+
+
+def _run_identity_command(argv: Sequence[str]) -> int:
+    if argv in (["--help"], ["-h"]):
+        try:
+            if len(ID0_HELP.splitlines()) > 64 or len(ID0_HELP.encode("utf-8")) > 32_768:
+                return _fixed_id0_error("ID0_OUTPUT_LIMIT_EXCEEDED")
+            sys.stdout.write(ID0_HELP)
+            sys.stdout.flush()
+            return 0
+        except Exception:
+            return 1
+    try:
+        args = _id0_arguments(argv)
+        if not args.dummy_only:
+            raise IdentityCandidateError("ID0_DUMMY_ONLY_ACK_REQUIRED")
+        result = run_identity_supervisor(
+            url=args.url,
+            profile_dir=args.profile_dir,
+            timeout_seconds=args.timeout_seconds,
+            stdout=sys.stdout,
+        )
+        publish_identity_result(result, sys.stdout)
+        return 0
+    except KeyboardInterrupt:
+        return _fixed_id0_error("ID0_INTERRUPTED")
+    except IdentityCandidateError as error:
+        if getattr(error, "terminal_write_attempted", False):
+            return 1
+        return _fixed_id0_error(error.code)
+    except Exception:
+        return _fixed_id0_error("ID0_INTERNAL_ERROR")
 
 
 def _run_inspect_one(args: argparse.Namespace) -> int:
@@ -260,8 +361,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):
         if isinstance(stream, TextIOWrapper):
             stream.reconfigure(encoding="utf-8")
+    actual_argv = list(sys.argv[1:] if argv is None else argv)
+    if actual_argv and actual_argv[0] == ID0_COMMAND:
+        return _run_identity_command(actual_argv[1:])
     parser = create_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(actual_argv)
     if args.command == "inspect-one":
         return _run_inspect_one(args)
     if args.command == "diagnose-calendar":

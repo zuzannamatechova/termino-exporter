@@ -92,6 +92,17 @@ detailu; poté se znovu použije existující zpracování jednoho detailu. Nezn
 skončí bezpečně. Více událostí, blokace a celý den zůstávají pro další fázi a Phase 4 jako
 celek ještě není dokončená.
 
+### Phase 4C-ID0 — Technická diagnostika kandidátů identity
+
+Implementována je izolovaná dummy-only diagnostika přesně dvou předem reviewovaných
+root atributů: `data-event-id` a `data-event-key`. Provede tři censusy kolem ručního
+otevření a ručního zavření známého detailu. Raw hodnoty zůstávají pouze v browserové
+closure a výstup obsahuje jen bounded počty, booleany, fixed codes a allowlisted names.
+ID0 nevybírá ani neschvaluje event key, nekliká a neimplementuje zpracování více eventů.
+
+Phase 4C-ID1, odstranění blockeru `EVENT_STABLE_IDENTITY_UNKNOWN` a Phase 4C2 zůstávají
+budoucími samostatnými review kroky.
+
 ## Phase 5 — Zpracovat rozsah dat
 
 Hotovo, když uživatel zadá počáteční a koncové datum, aplikace prochází kalendář, každé

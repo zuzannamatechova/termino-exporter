@@ -52,6 +52,7 @@ python -m termino_exporter --version
 python -m termino_exporter inspect-one --help
 python -m termino_exporter diagnose-calendar --help
 python -m termino_exporter inspect-single-event --help
+python -m termino_exporter diagnose-event-identity-candidates --help
 termino-exporter --help
 termino-exporter --version
 ```
@@ -87,6 +88,20 @@ event block a provede na něm jediný pokus o kliknutí. Událost neklasifikuje 
 kalendářního textu ani vzhledu. Teprve známá struktura otevřeného detailu potvrdí podporovanou
 rezervaci a následné zpracování znovu použije existující `inspect_open_detail`. Neznámý detail
 operaci bezpečně ukončí.
+
+`diagnose-event-identity-candidates --dummy-only` je explicitně test-only Phase 4C-ID0
+diagnostika pro den se dvěma až deseti zjevně smyšlenými rezervacemi. Uživatel ručně
+potvrdí baseline, ručně otevře jeden známý dummy detail a po další kontrole jej sám
+zavře. Program na událost ani detail nekliká. Technicky ověřuje pouze source-controlled
+root atributy `data-event-id` a `data-event-key`; jejich hodnoty nikdy neopustí privátní
+browserovou closure. Výsledek může kandidáta jen označit jako technicky stabilní a
+neschválený. `EVENT_STABLE_IDENTITY_UNKNOWN` zůstává blockerem a Phase 4C2 není
+implementována.
+
+ID0 je podporováno jen ve Windows 10/11 s interaktivním console stdin. Browser vlastní
+izolovaný worker vytvořený suspendovaně přímo přes Win32 v Job Objectu. Po baseline platí
+jediný 220sekundový operační a 222sekundový supervisor deadline; přerušení `Ctrl+C`
+spustí omezený cleanup celého process tree.
 
 ## Ruční prohlédnutí jedné rezervace
 

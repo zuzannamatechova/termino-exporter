@@ -70,3 +70,17 @@ Repozitář je veřejný. V testech, příkladech a dokumentaci smějí být pou
 
 Před commitem je nutné zkontrolovat změny i neznámé soubory a ověřit, že neobsahují
 osobní, autentizační ani produkční data.
+
+## Phase 4C-ID0
+
+- ID0 adresuje na event rootech pouze source-controlled allowlist `data-event-id` a
+  `data-event-key`. Ostatní názvy atributů se neenumerují ani nepublikují.
+- Raw hodnoty kandidátů zůstávají výhradně v lexical browser closure bez `JSHandle`,
+  hashe, délky či jiné odvozeniny v Pythonu, IPC, chybách nebo výstupu.
+- Worker dostane přesný čtyřhandle inheritance allowlist, vzniká suspendovaně s
+  atomickým Job Object membership a Playwright smí inicializovat až po explicitním
+  `START_BROWSER`. Úspěšný výsledek vyžaduje potvrzený `CLEAR`, zavření contextu,
+  graceful worker exit a `ActiveProcesses == 0`.
+- ID0 nikdy neschvaluje stabilní identitu. Pozitivní verdict je pouze
+  `TECHNICALLY_STABLE_UNAPPROVED`; `EVENT_STABLE_IDENTITY_UNKNOWN` zůstává aktivní až do
+  samostatného semantic/privacy review ID1.
